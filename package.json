@@ -1,0 +1,40 @@
+{
+  "name": "ai-usage-statusbar",
+  "displayName": "AI Usage Monitor",
+  "description": "Displays real-time Claude and Codex usage in the VS Code status bar",
+  "icon": "icon.png",
+  "version": "0.2.1",
+  "publisher": "PayolaJoker",
+  "author": "Payola Joker",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/payolajoker/vsix-ai-usage-monitor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/payolajoker/vsix-ai-usage-monitor/issues"
+  },
+  "homepage": "https://github.com/payolajoker/vsix-ai-usage-monitor#readme",
+  "engines": {
+    "vscode": "^1.79.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {},
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.79.0",
+    "@vscode/vsce": "^3.7.1",
+    "typescript": "^5.0.0"
+  }
+}
