@@ -59,6 +59,10 @@ async function doRefresh() {
     renderBar(claudeBar, 'Claude', claude, '#f0956a');
     renderBar(codexBar, 'Codex', codex, '#79c0ff');
 }
+function toPercent(utilization) {
+    const raw = utilization <= 1 ? utilization * 100 : utilization;
+    return Math.max(0, Math.min(100, Math.round(raw)));
+}
 function renderBar(bar, name, data, color) {
     if (data.error || !data.fiveHour) {
         bar.text = `$(warning) ${name[0]}`;
@@ -66,19 +70,19 @@ function renderBar(bar, name, data, color) {
         bar.tooltip = `${name}: ${data.error ?? 'No data available'}`;
         return;
     }
-    const rem5h = Math.round(100 - data.fiveHour.utilization);
+    const used5h = toPercent(data.fiveHour.utilization);
     const reset5h = formatReset(data.fiveHour.resetsAt);
-    bar.text = `$(circle-filled) ${rem5h}%${reset5h ? '  ' + reset5h : ''}`;
-    bar.color = rem5h < 15 ? '#f85149' : rem5h < 30 ? '#d29922' : color;
+    bar.text = `$(circle-filled) ${used5h}%${reset5h ? '  ' + reset5h : ''}`;
+    bar.color = used5h >= 85 ? '#f85149' : used5h >= 70 ? '#d29922' : color;
     const tip = new vscode.MarkdownString();
     tip.isTrusted = true;
     tip.appendMarkdown(`**${name}**\n\n`);
-    tip.appendMarkdown(`| | Remaining | Resets In |\n|---|---|---|\n`);
-    tip.appendMarkdown(`| 5-Hour Session | **${rem5h}%** | ${reset5h || '—'} |\n`);
+    tip.appendMarkdown(`| | Used | Resets In |\n|---|---|---|\n`);
+    tip.appendMarkdown(`| 5-Hour Session | **${used5h}%** | ${reset5h || '--'} |\n`);
     if (data.sevenDay) {
-        const rem7d = Math.round(100 - data.sevenDay.utilization);
+        const used7d = toPercent(data.sevenDay.utilization);
         const reset7d = formatReset(data.sevenDay.resetsAt);
-        tip.appendMarkdown(`| 7-Day Weekly | **${rem7d}%** | ${reset7d || '—'} |\n`);
+        tip.appendMarkdown(`| 7-Day Weekly | **${used7d}%** | ${reset7d || '--'} |\n`);
     }
     bar.tooltip = tip;
 }
@@ -102,7 +106,7 @@ function formatReset(iso) {
         return '';
     }
 }
-// ── Claude usage ─────────────────────────────────────────────────────────────
+// Claude usage
 async function getClaudeUsage() {
     try {
         const credPath = path.join(HOME, '.claude', '.credentials.json');
@@ -125,7 +129,7 @@ async function getClaudeUsage() {
         return { fiveHour: null, sevenDay: null, error: String(e.message) };
     }
 }
-// ── Codex usage ──────────────────────────────────────────────────────────────
+// Codex usage
 async function getCodexUsage() {
     try {
         const sessionsDir = path.join(HOME, '.codex', 'sessions');
@@ -134,7 +138,6 @@ async function getCodexUsage() {
             return { fiveHour: null, sevenDay: null, error: 'No session files found' };
         }
         files.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-        // Try up to 5 most recent files to find rate_limits
         let rateLimits = null;
         for (const file of files.slice(0, 5)) {
             for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
@@ -147,7 +150,9 @@ async function getCodexUsage() {
                         rateLimits = d.payload.rate_limits;
                     }
                 }
-                catch { /* skip */ }
+                catch {
+                    // skip malformed lines
+                }
             }
             if (rateLimits) {
                 break;
@@ -156,10 +161,16 @@ async function getCodexUsage() {
         if (!rateLimits) {
             return { fiveHour: null, sevenDay: null, error: 'No rate limits data' };
         }
-        const toIso = (ts) => ts ? new Date(ts * 1000).toISOString() : '';
+        const toIso = (ts) => (ts ? new Date(ts * 1000).toISOString() : '');
         return {
-            fiveHour: { utilization: rateLimits.primary?.used_percent ?? 0, resetsAt: toIso(rateLimits.primary?.resets_at) },
-            sevenDay: { utilization: rateLimits.secondary?.used_percent ?? 0, resetsAt: toIso(rateLimits.secondary?.resets_at) },
+            fiveHour: {
+                utilization: rateLimits.primary?.used_percent ?? 0,
+                resetsAt: toIso(rateLimits.primary?.resets_at),
+            },
+            sevenDay: {
+                utilization: rateLimits.secondary?.used_percent ?? 0,
+                resetsAt: toIso(rateLimits.secondary?.resets_at),
+            },
         };
     }
     catch (e) {
@@ -189,7 +200,9 @@ function httpsGet(hostname, urlPath, headers) {
     return new Promise((resolve, reject) => {
         const req = https.request({ hostname, path: urlPath, method: 'GET', headers }, (res) => {
             let raw = '';
-            res.on('data', (c) => { raw += c; });
+            res.on('data', (c) => {
+                raw += c;
+            });
             res.on('end', () => {
                 if (res.statusCode !== 200) {
                     try {
@@ -210,8 +223,12 @@ function httpsGet(hostname, urlPath, headers) {
             });
         });
         req.on('error', reject);
-        req.setTimeout(8000, () => { req.destroy(new Error('Request timed out')); });
+        req.setTimeout(8000, () => {
+            req.destroy(new Error('Request timed out'));
+        });
         req.end();
     });
 }
-function deactivate() { clearInterval(timer); }
+function deactivate() {
+    clearInterval(timer);
+}

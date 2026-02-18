@@ -3,7 +3,7 @@
   "displayName": "AI Usage Monitor",
   "description": "Displays real-time Claude and Codex usage in the VS Code status bar",
   "icon": "icon.png",
-  "version": "0.2.1",
+  "version": "0.2.4",
   "publisher": "PayolaJoker",
   "author": "Payola Joker",
   "license": "MIT",
