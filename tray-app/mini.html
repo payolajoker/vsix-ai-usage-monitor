@@ -555,7 +555,11 @@
     }
 
     function saveSkinPrefs() {
-      localStorage.setItem(SKIN_PREFS_KEY, JSON.stringify(skinPrefs));
+      try {
+        localStorage.setItem(SKIN_PREFS_KEY, JSON.stringify(skinPrefs));
+      } catch {
+        // localStorage quota exceeded or unavailable
+      }
     }
 
     function normalizeSkinIndex(index) {
@@ -782,6 +786,9 @@
       }
 
       const tick = () => {
+        if (document.hidden) {
+          return;
+        }
         catStage.classList.remove('tap-a', 'tap-b');
         void catStage.offsetWidth;
         catStage.classList.add(count % 2 === 0 ? 'tap-a' : 'tap-b');

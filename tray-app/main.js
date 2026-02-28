@@ -43,25 +43,43 @@ let lastLevels = {
   claude: 0,
   codex: 0,
 };
+let displayListenerCleanup = null;
 
 app.setAppUserModelId('com.payolajoker.aiusagetray');
 app.on('window-all-closed', (event) => {
   event.preventDefault();
 });
 
-app.whenReady().then(() => {
-  createTray();
-  createMiniWindow();
-  registerIpc();
-  registerDisplayListeners();
-  refreshNow();
-  refreshTimer = setInterval(refreshNow, REFRESH_MS);
-});
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (miniWin && !miniWin.isDestroyed()) {
+      miniWin.showInactive();
+      positionMiniWindow();
+    }
+  });
+
+  app.whenReady().then(() => {
+    createTray();
+    createMiniWindow();
+    registerIpc();
+    registerDisplayListeners();
+    refreshNow();
+    refreshTimer = setInterval(refreshNow, REFRESH_MS);
+  });
+}
 
 app.on('before-quit', () => {
   isQuitting = true;
   if (refreshTimer) {
     clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+  if (displayListenerCleanup) {
+    displayListenerCleanup();
+    displayListenerCleanup = null;
   }
 });
 
@@ -75,7 +93,11 @@ function createTray() {
   tray = new Tray(icon);
   tray.setToolTip('AI Usage Tray');
   tray.setContextMenu(buildInitialMenu());
-  tray.on('click', () => refreshNow());
+  tray.on('click', () => {
+    if (!isQuitting) {
+      refreshNow();
+    }
+  });
 }
 
 function buildInitialMenu() {
@@ -165,13 +187,19 @@ function registerIpc() {
 
 function registerDisplayListeners() {
   const reposition = () => {
-    if (miniVisible) {
+    if (miniVisible && miniWin && !miniWin.isDestroyed()) {
       positionMiniWindow();
     }
   };
   screen.on('display-metrics-changed', reposition);
   screen.on('display-added', reposition);
   screen.on('display-removed', reposition);
+
+  displayListenerCleanup = () => {
+    screen.removeListener('display-metrics-changed', reposition);
+    screen.removeListener('display-added', reposition);
+    screen.removeListener('display-removed', reposition);
+  };
 }
 
 function getMiniHeight() {
@@ -204,10 +232,24 @@ function positionMiniWindow() {
     return;
   }
 
-  const area = screen.getPrimaryDisplay().workArea;
-  const x = Math.round(area.x + area.width - MINI_WIDTH - 10);
-  const y = Math.round(area.y + area.height - getMiniHeight() - 10);
-  miniWin.setPosition(x, y, false);
+  try {
+    let area;
+    try {
+      const trayBounds = tray.getBounds();
+      if (trayBounds.width > 0 && trayBounds.height > 0) {
+        area = screen.getDisplayMatching(trayBounds).workArea;
+      } else {
+        area = screen.getPrimaryDisplay().workArea;
+      }
+    } catch {
+      area = screen.getPrimaryDisplay().workArea;
+    }
+    const x = Math.round(area.x + area.width - MINI_WIDTH - 10);
+    const y = Math.round(area.y + area.height - getMiniHeight() - 10);
+    miniWin.setPosition(x, y, false);
+  } catch {
+    // Window was destroyed between check and setPosition
+  }
 }
 
 function toggleMiniWindow() {
@@ -264,13 +306,28 @@ function applyFocusMode(nextMode) {
 }
 
 async function refreshNow() {
-  const [claude, codex] = await Promise.all([getClaudeUsage(), getCodexUsage()]);
-  lastMiniMeta = buildMiniMeta(claude, codex, { updateHistory: true });
-  lastUsage = { claude, codex };
-  updateTray(claude, codex);
-  updateMiniWindow(claude, codex, lastMiniMeta);
-  maybeNotify('Claude', claude, 'ratio');
-  maybeNotify('Codex', codex, 'percent');
+  if (isQuitting) {
+    return;
+  }
+
+  let claude, codex;
+  try {
+    [claude, codex] = await Promise.all([getClaudeUsage(), getCodexUsage()]);
+  } catch (err) {
+    claude = { fiveHour: null, sevenDay: null, error: String(err.message || err) };
+    codex = { fiveHour: null, sevenDay: null, error: String(err.message || err) };
+  }
+
+  try {
+    lastMiniMeta = buildMiniMeta(claude, codex, { updateHistory: true });
+    lastUsage = { claude, codex };
+    updateTray(claude, codex);
+    updateMiniWindow(claude, codex, lastMiniMeta);
+    maybeNotify('Claude', claude, 'ratio');
+    maybeNotify('Codex', codex, 'percent');
+  } catch {
+    // Prevent refresh cycle from breaking; next interval will retry
+  }
 }
 
 function catFocusMenuTemplate() {
@@ -365,7 +422,11 @@ function updateMiniWindow(claude, codex, meta = makeDefaultMiniMeta()) {
     return;
   }
 
-  miniWin.webContents.send('usage-update', payload);
+  try {
+    miniWin.webContents.send('usage-update', payload);
+  } catch {
+    // Window destroyed between ready check and send
+  }
 }
 
 function toMiniPayload(provider, usage, scale, trend = 0, changed = false, crossings = { warn: false, danger: false }) {
@@ -727,7 +788,9 @@ async function refreshClaudeAccessToken(credPath, cred) {
   }
 
   cred.claudeAiOauth = nextOauth;
-  fs.writeFileSync(credPath, `${JSON.stringify(cred, null, 2)}\n`, 'utf8');
+  const tmpPath = `${credPath}.tmp`;
+  fs.writeFileSync(tmpPath, `${JSON.stringify(cred, null, 2)}\n`, 'utf8');
+  fs.renameSync(tmpPath, credPath);
   return nextOauth;
 }
 
@@ -769,6 +832,32 @@ async function getCodexUsageFromAppServer() {
   }
 }
 
+function killChildProcess(child) {
+  try {
+    if (child.killed) {
+      return;
+    }
+    child.kill();
+  } catch {
+    // ignore
+  }
+
+  if (process.platform === 'win32' && child.pid) {
+    const pid = child.pid;
+    setTimeout(() => {
+      try {
+        process.kill(pid, 0);
+        spawn('taskkill', ['/pid', String(pid), '/t', '/f'], {
+          stdio: 'ignore',
+          windowsHide: true,
+        });
+      } catch {
+        // process already dead
+      }
+    }, 500);
+  }
+}
+
 function readCodexRateLimitsFromAppServer() {
   return new Promise((resolve, reject) => {
     const child = spawnCodexAppServerProcess();
@@ -788,9 +877,7 @@ function readCodexRateLimitsFromAppServer() {
       try {
         child.stdin.end();
       } catch {}
-      try {
-        child.kill();
-      } catch {}
+      killChildProcess(child);
       resolve(value);
     };
 
@@ -805,9 +892,7 @@ function readCodexRateLimitsFromAppServer() {
       try {
         child.stdin.end();
       } catch {}
-      try {
-        child.kill();
-      } catch {}
+      killChildProcess(child);
       reject(error);
     };
 
@@ -841,6 +926,10 @@ function readCodexRateLimitsFromAppServer() {
         try {
           msg = JSON.parse(trimmed);
         } catch {
+          continue;
+        }
+
+        if (!msg || typeof msg !== 'object') {
           continue;
         }
 
@@ -955,10 +1044,17 @@ async function getCodexUsageFromSessions() {
       return { fiveHour: null, sevenDay: null, error: 'No session files found' };
     }
 
-    files.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+    const withMtime = files.map((f) => {
+      try {
+        return { path: f, mtime: fs.statSync(f).mtimeMs };
+      } catch {
+        return { path: f, mtime: 0 };
+      }
+    });
+    withMtime.sort((a, b) => b.mtime - a.mtime);
 
     let rateLimits = null;
-    for (const file of files.slice(0, 5)) {
+    for (const file of withMtime.slice(0, 5).map((e) => e.path)) {
       for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
         if (!line.trim()) {
           continue;
@@ -1108,6 +1204,7 @@ function httpsJsonRequest(method, hostname, urlPath, headers, body) {
 
     const req = https.request({ hostname, path: urlPath, method, headers: reqHeaders }, (res) => {
       let raw = '';
+      res.on('error', (err) => reject(err));
       res.on('data', (chunk) => {
         raw += chunk;
       });
