@@ -4,25 +4,30 @@ Monitor your **Claude** (Anthropic) and **Codex** (OpenAI) usage directly from t
 
 ## Features
 
-- **Status bar indicators**: Shows used usage (%) for both Claude and Codex at a glance.
-- **Color-coded warnings**: Blue/Orange to Yellow to Red as used usage increases.
+- **Single status bar indicator**: Shows Claude + Codex usage in one line with color emoji markers.
+- **Color-coded warnings**: Normal to Yellow to Red as usage increases.
 - **Hover tooltip**: Displays a detailed breakdown for 5-hour session and 7-day weekly limits with reset timers.
 - **Auto-refresh**: Updates every 60 seconds automatically.
 
+## What's New (0.2.7)
+
+- Switched status bar text to color-emoji format (`🟠 Claude`, `🔵 Codex`) in a single item.
+- Updated details and requirements around Codex app-server based fetching.
+- Added local probe page to test Codex rate-limit fetch before extension debugging.
+
 ## Requirements
 
-| Tool | Required file |
-|------|--------------|
+| Tool | Requirement |
+|------|-------------|
 | Claude Code | `~/.claude/.credentials.json` |
-| Codex CLI | `~/.codex/sessions/` directory |
+| Codex CLI | `codex` command available in `PATH` (app-server) |
 
 Both tools must be installed and have been used at least once for usage data to appear.
 
 ## Status Bar
 
 ```
-72%  1h 30m    85%  45m
-Claude         Codex
+🟠 C 72% 1h 30m  |  🔵 O 85% 45m
 ```
 
 - Indicator turns **yellow** when used usage reaches 70% or more.
@@ -41,8 +46,25 @@ Hover over either indicator to see a detailed table:
 ## Notes
 
 - Claude usage is fetched via the Anthropic OAuth API using the local credentials file managed by Claude Code.
-- Codex usage is read from local session files managed by the Codex CLI.
+- Codex usage is fetched via `codex app-server` (`account/rateLimits/read`).
+- If app-server is temporarily unavailable, the extension can still recover from local session data.
 - No data is sent anywhere; everything runs locally.
+
+## Quick Probe (Before Extension Debugging)
+
+If you want to verify Codex rate-limit fetch works first:
+
+```bash
+npm run probe:codex-web
+```
+
+Then open:
+
+```
+http://127.0.0.1:47931
+```
+
+Use the button to run a one-shot `codex app-server` check and inspect the raw JSON response.
 
 ## License
 
