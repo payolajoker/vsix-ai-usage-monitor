@@ -1,0 +1,43 @@
+{
+  "name": "ai-usage-tray",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windows tray monitor for Claude and Codex usage",
+  "author": "Payola Joker",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "package:win": "electron-builder --win portable",
+    "package:store": "electron-builder --win appx"
+  },
+  "devDependencies": {
+    "electron": "^34.2.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.payolajoker.aiusagetray",
+    "productName": "AI Usage Tray",
+    "files": [
+      "main.js",
+      "mini.html",
+      "assets/**",
+      "package.json",
+      "README.md"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "portable",
+        "appx"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "appx": {
+      "identityName": "PayolaJoker.AIUsageTray",
+      "publisherDisplayName": "Payola Joker"
+    }
+  }
+}

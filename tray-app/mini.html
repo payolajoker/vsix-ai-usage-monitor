@@ -1,0 +1,843 @@
+﻿<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Usage Pet HUD</title>
+  <style>
+    :root {
+      --ui-scale: 1.5;
+      --bg-a: #171024;
+      --bg-b: #2b1740;
+      --ink: #f4ecff;
+      --muted: #b9acd0;
+      --claude: #ffb76d;
+      --codex: #7cc6ff;
+      --ok: #6de2ae;
+      --warn: #ffd97c;
+      --danger: #ff7e7e;
+      --shadow: rgba(0, 0, 0, 0.65);
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      image-rendering: pixelated;
+    }
+
+    body {
+      margin: 0;
+      background: transparent;
+      color: var(--ink);
+      font-family: "Press Start 2P", "Consolas", "Malgun Gothic", monospace;
+      font-size: 10px;
+      zoom: var(--ui-scale);
+      overflow: hidden;
+    }
+
+    .widget {
+      width: calc(100% - 10px);
+      height: calc(100% - 10px);
+      margin: 5px;
+      padding: 8px;
+      border-radius: 24px;
+      background:
+        radial-gradient(120% 100% at 14% -4%, rgba(255, 214, 153, 0.16), transparent 55%),
+        radial-gradient(150% 110% at 105% 108%, rgba(121, 206, 255, 0.14), transparent 60%),
+        linear-gradient(150deg, var(--bg-a), var(--bg-b));
+      box-shadow:
+        0 14px 35px rgba(8, 3, 16, 0.5),
+        inset 0 0 0 2px rgba(255, 255, 255, 0.06),
+        inset 0 -18px 20px rgba(0, 0, 0, 0.2);
+      display: grid;
+      grid-template-columns: 136px 1fr;
+      gap: 8px;
+      -webkit-app-region: drag;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .widget::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 45%);
+      pointer-events: none;
+      opacity: 1;
+    }
+
+    .widget.state-watch {
+      box-shadow:
+        0 14px 35px rgba(39, 22, 5, 0.42),
+        inset 0 0 0 2px rgba(255, 208, 103, 0.34),
+        inset 0 -18px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    .widget.state-high {
+      box-shadow:
+        0 14px 35px rgba(58, 12, 18, 0.5),
+        inset 0 0 0 2px rgba(255, 126, 126, 0.42),
+        inset 0 -18px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    .widget.state-error {
+      filter: saturate(0.68);
+      animation: glitch 180ms steps(2, end) 2;
+    }
+
+    .widget.state-stale {
+      filter: saturate(0.75) brightness(0.95);
+    }
+
+    .cat-stage {
+      border-radius: 20px;
+      border: 2px solid rgba(255, 255, 255, 0.08);
+      background:
+        radial-gradient(115% 95% at 18% -6%, rgba(128, 222, 255, 0.14), transparent 58%),
+        linear-gradient(180deg, rgba(18, 11, 30, 0.95), rgba(14, 9, 23, 0.95));
+      box-shadow:
+        inset 0 0 0 2px rgba(97, 73, 131, 0.45),
+        inset 0 -10px 14px rgba(0, 0, 0, 0.28);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 136px;
+      align-self: start;
+      overflow: hidden;
+    }
+
+    .cat-stage.tap-a #catSprite {
+      animation: tap-a 125ms steps(2, end);
+    }
+
+    .cat-stage.tap-b #catSprite {
+      animation: tap-b 125ms steps(2, end);
+    }
+
+    #catSprite {
+      width: 104px;
+      height: 104px;
+      object-fit: contain;
+      transform-origin: 50% 82%;
+      filter: drop-shadow(0 3px 0 var(--shadow));
+    }
+
+    #catSprite.idle-bob {
+      animation: cat-idle 2.1s steps(2, end) infinite;
+    }
+
+    #catSprite.alert-bob {
+      animation: cat-alert 530ms steps(2, end) infinite;
+    }
+
+    .info {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto auto auto auto;
+      gap: 10px;
+      align-content: start;
+    }
+
+    .top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      line-height: 1;
+    }
+
+    .title {
+      font-size: 8px;
+      color: #ece1ff;
+      text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.8);
+      letter-spacing: 0.2px;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      -webkit-app-region: no-drag;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 11px;
+      padding: 4px 7px;
+      line-height: 1;
+      font: inherit;
+      font-size: 8px;
+      cursor: pointer;
+      color: #fbf7ff;
+      background: linear-gradient(180deg, rgba(74, 53, 104, 0.95), rgba(44, 30, 67, 0.95));
+      box-shadow:
+        0 2px 0 rgba(12, 7, 22, 0.8),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+      min-width: 38px;
+      text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.7);
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+      box-shadow:
+        0 1px 0 rgba(12, 7, 22, 0.8),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    }
+
+    .btn.skin {
+      min-width: 52px;
+      background: linear-gradient(180deg, rgba(80, 56, 112, 0.96), rgba(54, 35, 79, 0.96));
+    }
+
+    .btn.detail.active {
+      background: linear-gradient(180deg, rgba(128, 67, 74, 0.95), rgba(84, 34, 46, 0.95));
+    }
+
+    .usage-row {
+      border-radius: 14px;
+      background: rgba(16, 11, 26, 0.78);
+      padding: 8px 9px;
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+        inset 0 -6px 8px rgba(0, 0, 0, 0.2);
+      display: grid;
+      gap: 7px;
+    }
+
+    .usage-row.active {
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.22),
+        inset 0 -6px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .head {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px;
+      line-height: 1;
+      align-items: center;
+    }
+
+    .name {
+      color: var(--muted);
+      font-size: 8px;
+    }
+
+    .usage-row.claude .name {
+      color: #ffcf98;
+    }
+
+    .usage-row.codex .name {
+      color: #a7d8ff;
+    }
+
+    .value {
+      color: #fdf8ff;
+      font-size: 7px;
+      white-space: nowrap;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align: right;
+    }
+
+    .blocks {
+      display: grid;
+      grid-template-columns: repeat(20, minmax(0, 1fr));
+      gap: 2px;
+      height: 12px;
+    }
+
+    .pixel {
+      border-radius: 2px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .usage-row.claude .pixel.on {
+      background: #ffb76d;
+      border-color: #f7d5ae;
+    }
+
+    .usage-row.codex .pixel.on {
+      background: #7cc6ff;
+      border-color: #c8e5ff;
+    }
+
+    .usage-row.warn .pixel.on {
+      background: var(--warn);
+      border-color: #fff0c4;
+    }
+
+    .usage-row.danger .pixel.on {
+      background: var(--danger);
+      border-color: #ffd7d7;
+    }
+
+    .usage-row.error .pixel {
+      background: rgba(255, 126, 126, 0.3);
+      border-color: rgba(255, 202, 202, 0.38);
+    }
+
+    .drawer {
+      display: none;
+      gap: 5px;
+      border-radius: 15px;
+      padding: 6px;
+      background: rgba(13, 9, 20, 0.84);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    }
+
+    .widget.expanded .drawer {
+      display: grid;
+    }
+
+    .skin-card,
+    .detail-card {
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 5px;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+      display: grid;
+      gap: 3px;
+    }
+
+    .detail-card.claude {
+      box-shadow:
+        inset 3px 0 0 rgba(255, 183, 109, 0.95),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+    }
+
+    .detail-card.codex {
+      box-shadow:
+        inset 3px 0 0 rgba(124, 198, 255, 0.98),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+    }
+
+    .hline {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      line-height: 1.25;
+      white-space: nowrap;
+      color: var(--muted);
+      font-size: 7px;
+    }
+
+    .hline span:last-child {
+      color: #f7f3ff;
+      max-width: 52%;
+      text-overflow: ellipsis;
+      overflow: hidden;
+      text-align: right;
+    }
+
+    .skin-controls {
+      display: flex;
+      gap: 4px;
+      -webkit-app-region: no-drag;
+    }
+
+    .skin-controls .btn {
+      min-width: 34px;
+      padding: 4px 5px;
+    }
+
+    .footer {
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 7px;
+      border-top: 1px dashed rgba(255, 255, 255, 0.16);
+      padding-top: 4px;
+      padding-right: 8px;
+      padding-left: 2px;
+      padding-bottom: 2px;
+    }
+
+    .state {
+      font-size: 8px;
+      color: var(--ok);
+    }
+
+    .widget.state-watch .state {
+      color: var(--warn);
+    }
+
+    .widget.state-high .state,
+    .widget.state-error .state {
+      color: var(--danger);
+    }
+
+    @keyframes cat-idle {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-1px); }
+    }
+
+    @keyframes cat-alert {
+      0%, 100% { transform: translate(0, 0); }
+      50% { transform: translate(1px, -1px); }
+    }
+
+    @keyframes glitch {
+      0% { transform: translate(0, 0); }
+      33% { transform: translate(-1px, 0); }
+      66% { transform: translate(1px, 0); }
+      100% { transform: translate(0, 0); }
+    }
+
+    @keyframes tap-a {
+      0% { transform: translate(0, 0); }
+      50% { transform: translate(-2px, 1px); }
+      100% { transform: translate(0, 0); }
+    }
+
+    @keyframes tap-b {
+      0% { transform: translate(0, 0); }
+      50% { transform: translate(2px, 1px); }
+      100% { transform: translate(0, 0); }
+    }
+  </style>
+</head>
+<body>
+  <div id="widget" class="widget state-calm">
+    <div id="catStage" class="cat-stage">
+      <img id="catSprite" class="idle-bob" alt="Cat sprite" src="./assets/cat/ai_cat_robot_tail_pixel_1772220230915.png" />
+    </div>
+
+    <div class="info">
+      <div class="top">
+        <div class="title">AI USAGE</div>
+        <div class="controls">
+          <button id="skinBtn" class="btn skin" type="button">SKIN</button>
+          <button id="detailBtn" class="btn detail" type="button" title="Toggle panel">+</button>
+        </div>
+      </div>
+
+      <div id="claudeRow" class="usage-row claude">
+        <div class="head">
+          <span class="name">CLAUDE</span>
+          <span id="claudeValue" class="value">--</span>
+        </div>
+        <div id="claudeBlocks" class="blocks"></div>
+      </div>
+
+      <div id="codexRow" class="usage-row codex">
+        <div class="head">
+          <span class="name">CODEX</span>
+          <span id="codexValue" class="value">--</span>
+        </div>
+        <div id="codexBlocks" class="blocks"></div>
+      </div>
+
+      <div id="drawer" class="drawer">
+        <div class="skin-card">
+          <div class="hline"><span>SKIN MODE / NAME</span><span id="skinStateText">AUTO / CALICO</span></div>
+          <div class="skin-controls">
+            <button id="skinModeBtn" class="btn" type="button">AUTO</button>
+            <button id="skinPrevBtn" class="btn" type="button">&lt;</button>
+            <button id="skinNextBtn" class="btn" type="button">&gt;</button>
+          </div>
+        </div>
+
+        <div class="detail-card claude">
+          <div class="hline"><span>CLAUDE 5H USED / RESET</span><span id="claudeDetail5hLine">-- / --</span></div>
+          <div class="hline"><span>CLAUDE 7D USED / RESET</span><span id="claudeDetail7dLine">-- / --</span></div>
+        </div>
+
+        <div class="detail-card codex">
+          <div class="hline"><span>CODEX 5H USED / RESET</span><span id="codexDetail5hLine">-- / --</span></div>
+          <div class="hline"><span>CODEX 7D USED / RESET</span><span id="codexDetail7dLine">-- / --</span></div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <span id="updated">--:--:--</span>
+        <span id="stateText" class="state">CALM</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    const widget = document.getElementById('widget');
+    const catStage = document.getElementById('catStage');
+    const catSprite = document.getElementById('catSprite');
+
+    const detailBtn = document.getElementById('detailBtn');
+    const skinBtn = document.getElementById('skinBtn');
+    const skinModeBtn = document.getElementById('skinModeBtn');
+    const skinPrevBtn = document.getElementById('skinPrevBtn');
+    const skinNextBtn = document.getElementById('skinNextBtn');
+    const skinStateText = document.getElementById('skinStateText');
+
+    const updatedEl = document.getElementById('updated');
+    const stateTextEl = document.getElementById('stateText');
+
+    const claudeRow = document.getElementById('claudeRow');
+    const codexRow = document.getElementById('codexRow');
+    const claudeValue = document.getElementById('claudeValue');
+    const codexValue = document.getElementById('codexValue');
+    const claudeBlocks = document.getElementById('claudeBlocks');
+    const codexBlocks = document.getElementById('codexBlocks');
+
+    const claudeDetail5hLine = document.getElementById('claudeDetail5hLine');
+    const claudeDetail7dLine = document.getElementById('claudeDetail7dLine');
+    const codexDetail5hLine = document.getElementById('codexDetail5hLine');
+    const codexDetail7dLine = document.getElementById('codexDetail7dLine');
+
+    const SKIN_PREFS_KEY = 'ai_usage_tray_skin_prefs_v1';
+    const SKINS = [
+      { id: 'robot', name: 'ROBOT', file: 'ai_cat_robot_tail_pixel_1772220230915.png' },
+      { id: 'orange', name: 'ORANGE', file: 'ai_cat_orange_tabby_1772220649181.png' },
+      { id: 'calico', name: 'CALICO', file: 'ai_cat_calico_1772220679723.png' },
+      { id: 'grey', name: 'GREY', file: 'ai_cat_grey_1772220713087.png' },
+      { id: 'siamese', name: 'SIAMESE', file: 'ai_cat_siamese_1772220696514.png' },
+      { id: 'tuxedo', name: 'TUXEDO', file: 'ai_cat_tuxedo_1772220663562.png' },
+      { id: 'midnight', name: 'MIDNIGHT', file: 'ai_cat_midnight_1772220526710.png' },
+      { id: 'neon', name: 'NEON', file: 'ai_cat_neon_1772220368119.png' },
+      { id: 'fire', name: 'FIRE', file: 'ai_cat_fire_1772220510214.png' },
+      { id: 'pastel', name: 'PASTEL', file: 'ai_cat_pastel_1772220399188.png' },
+      { id: 'gameboy', name: 'GAMEBOY', file: 'ai_cat_gameboy_1772220384453.png' },
+      { id: 'mono', name: 'MONO', file: 'ai_cat_monochrome_1772220494765.png' },
+    ];
+
+    const AUTO_SKIN_MAP = {
+      claude: {
+        CALM: 'ai_cat_orange_tabby_1772220649181.png',
+        WATCH: 'ai_cat_calico_1772220679723.png',
+        HIGH: 'ai_cat_fire_1772220510214.png',
+        ERROR: 'ai_cat_monochrome_1772220494765.png',
+        STALE: 'ai_cat_siamese_1772220696514.png',
+      },
+      codex: {
+        CALM: 'ai_cat_robot_tail_pixel_1772220230915.png',
+        WATCH: 'ai_cat_grey_1772220713087.png',
+        HIGH: 'ai_cat_neon_1772220368119.png',
+        ERROR: 'ai_cat_monochrome_1772220494765.png',
+        STALE: 'ai_cat_midnight_1772220526710.png',
+      },
+      neutral: {
+        CALM: 'ai_cat_calico_1772220679723.png',
+        WATCH: 'ai_cat_grey_1772220713087.png',
+        HIGH: 'ai_cat_neon_1772220368119.png',
+        ERROR: 'ai_cat_monochrome_1772220494765.png',
+        STALE: 'ai_cat_midnight_1772220526710.png',
+      },
+    };
+
+    let detailsVisible = false;
+    let tapTimer = null;
+    let latestPayload = null;
+    let skinPrefs = loadSkinPrefs();
+
+    function loadSkinPrefs() {
+      try {
+        const raw = localStorage.getItem(SKIN_PREFS_KEY);
+        if (!raw) {
+          return { mode: 'auto', manualIndex: 0 };
+        }
+        const parsed = JSON.parse(raw);
+        const mode = parsed && parsed.mode === 'manual' ? 'manual' : 'auto';
+        const index = Number.isInteger(parsed.manualIndex) ? parsed.manualIndex : 0;
+        return {
+          mode,
+          manualIndex: normalizeSkinIndex(index),
+        };
+      } catch {
+        return { mode: 'auto', manualIndex: 0 };
+      }
+    }
+
+    function saveSkinPrefs() {
+      localStorage.setItem(SKIN_PREFS_KEY, JSON.stringify(skinPrefs));
+    }
+
+    function normalizeSkinIndex(index) {
+      if (!Number.isInteger(index)) {
+        return 0;
+      }
+      const len = SKINS.length;
+      return ((index % len) + len) % len;
+    }
+
+    function getManualSkin() {
+      return SKINS[normalizeSkinIndex(skinPrefs.manualIndex)];
+    }
+
+    function buildBlocks(root, size = 20) {
+      root.innerHTML = '';
+      for (let i = 0; i < size; i += 1) {
+        const pixel = document.createElement('span');
+        pixel.className = 'pixel';
+        root.appendChild(pixel);
+      }
+    }
+
+    function getPixels(root) {
+      return root.querySelectorAll('.pixel');
+    }
+
+    function formatPercent(value) {
+      return value == null ? '--' : `${value}%`;
+    }
+
+    function formatReset(value) {
+      return value && value.length ? value : '--';
+    }
+
+    function setDetailsVisible(nextVisible) {
+      detailsVisible = Boolean(nextVisible);
+      widget.classList.toggle('expanded', detailsVisible);
+      detailBtn.classList.toggle('active', detailsVisible);
+      detailBtn.textContent = detailsVisible ? '-' : '+';
+    }
+
+    function rowLevelClass(level) {
+      if (level >= 2) {
+        return 'danger';
+      }
+      if (level >= 1) {
+        return 'warn';
+      }
+      return '';
+    }
+
+    function renderPixels(root, percent) {
+      const pixels = getPixels(root);
+      const fillCount = percent == null ? 0 : Math.max(0, Math.min(pixels.length, Math.round(percent / 5)));
+      pixels.forEach((pixel, idx) => {
+        pixel.classList.toggle('on', idx < fillCount);
+      });
+    }
+
+    function formatRow(entry) {
+      if (!entry || entry.error || entry.used5h == null) {
+        return compactRowError(entry && entry.error ? entry.error : 'NO DATA');
+      }
+      return `${entry.used5h}% ${formatReset(entry.reset5h)}`;
+    }
+
+    function compactRowError(errorText) {
+      const text = String(errorText || '').toUpperCase();
+      if (text.includes('CLAUDE CLI RELOGIN REQUIRED')) {
+        return 'CLAUDE RELOGIN';
+      }
+      if (text.includes('CLAUDE CLI LOGIN REQUIRED')) {
+        return 'CLAUDE LOGIN';
+      }
+      if (text.includes('CODEX CLI LOGIN REQUIRED')) {
+        return 'CODEX LOGIN';
+      }
+      if (text.includes('CODEX CLI NOT FOUND')) {
+        return 'CODEX NOT FOUND';
+      }
+      if (text.includes('CODEX CLI DATA MISSING')) {
+        return 'CODEX DATA MISSING';
+      }
+      if (text.includes('TIMEOUT')) {
+        return 'TIMEOUT';
+      }
+      return 'NO DATA';
+    }
+
+    function paintRow(row, valueTarget, blocksTarget, entry) {
+      row.classList.remove('warn', 'danger', 'error');
+      if (!entry || entry.error || entry.used5h == null) {
+        row.classList.add('error');
+        valueTarget.textContent = formatRow(entry);
+        renderPixels(blocksTarget, null);
+        return;
+      }
+
+      const cls = rowLevelClass(entry.level || 0);
+      if (cls) {
+        row.classList.add(cls);
+      }
+      valueTarget.textContent = formatRow(entry);
+      renderPixels(blocksTarget, Number(entry.progress != null ? entry.progress : entry.used5h));
+    }
+
+    function paintDetailLines(entry, line5h, line7d) {
+      if (!entry || entry.error || entry.used5h == null) {
+        line5h.textContent = entry && entry.error ? entry.error : 'NO DATA';
+        line7d.textContent = '-- / --';
+        return;
+      }
+      line5h.textContent = `${formatPercent(entry.used5h)} / ${formatReset(entry.reset5h)}`;
+      line7d.textContent = `${formatPercent(entry.used7d)} / ${formatReset(entry.reset7d)}`;
+    }
+
+    function updateSkinUi() {
+      const manualSkin = getManualSkin();
+      const modeText = skinPrefs.mode === 'manual' ? 'MANUAL' : 'AUTO';
+      skinStateText.textContent = `${modeText} / ${manualSkin.name}`;
+      skinModeBtn.textContent = skinPrefs.mode === 'manual' ? 'MAN' : 'AUTO';
+    }
+
+    function setSkinMode(nextMode) {
+      skinPrefs.mode = nextMode === 'manual' ? 'manual' : 'auto';
+      saveSkinPrefs();
+      updateSkinUi();
+      if (latestPayload) {
+        repaintSkin(latestPayload);
+      }
+    }
+
+    function cycleSkin(step) {
+      skinPrefs.manualIndex = normalizeSkinIndex(skinPrefs.manualIndex + step);
+      skinPrefs.mode = 'manual';
+      saveSkinPrefs();
+      updateSkinUi();
+      if (latestPayload) {
+        repaintSkin(latestPayload);
+      }
+    }
+
+    function autoSkinFile(state, activeProvider) {
+      if (activeProvider === 'claude') {
+        return AUTO_SKIN_MAP.claude[state] || AUTO_SKIN_MAP.claude.CALM;
+      }
+      if (activeProvider === 'codex') {
+        return AUTO_SKIN_MAP.codex[state] || AUTO_SKIN_MAP.codex.CALM;
+      }
+      return AUTO_SKIN_MAP.neutral[state] || AUTO_SKIN_MAP.neutral.CALM;
+    }
+
+    function resolveSkinFile(payload) {
+      if (skinPrefs.mode === 'manual') {
+        return getManualSkin().file;
+      }
+      const state = payload && payload.state ? payload.state : 'CALM';
+      const provider = payload && payload.activeProvider ? payload.activeProvider : 'neutral';
+      return autoSkinFile(state, provider);
+    }
+
+    function repaintSkin(payload) {
+      catSprite.src = `./assets/cat/${resolveSkinFile(payload)}`;
+    }
+
+    function stateClass(state) {
+      if (state === 'HIGH') {
+        return 'state-high';
+      }
+      if (state === 'WATCH') {
+        return 'state-watch';
+      }
+      if (state === 'ERROR') {
+        return 'state-error';
+      }
+      if (state === 'STALE') {
+        return 'state-stale';
+      }
+      return 'state-calm';
+    }
+
+    function applyWidgetState(state) {
+      widget.classList.remove('state-calm', 'state-watch', 'state-high', 'state-error', 'state-stale');
+      widget.classList.add(stateClass(state));
+      stateTextEl.textContent = state || 'CALM';
+
+      catSprite.classList.remove('idle-bob', 'alert-bob');
+      if (state === 'HIGH' || state === 'WATCH') {
+        catSprite.classList.add('alert-bob');
+      } else {
+        catSprite.classList.add('idle-bob');
+      }
+    }
+
+    function updateActiveRows(provider) {
+      claudeRow.classList.toggle('active', provider === 'claude');
+      codexRow.classList.toggle('active', provider === 'codex');
+    }
+
+    function runTap(state, payload) {
+      const cChanged = payload.claude && (payload.claude.changed || payload.claude.warnCrossed || payload.claude.dangerCrossed);
+      const oChanged = payload.codex && (payload.codex.changed || payload.codex.warnCrossed || payload.codex.dangerCrossed);
+      const changed = Boolean(cChanged || oChanged);
+      if (!changed && state === 'CALM') {
+        return;
+      }
+
+      let taps = 2;
+      if (state === 'WATCH') {
+        taps = 4;
+      }
+      if (state === 'HIGH') {
+        taps = 6;
+      }
+      if (state === 'ERROR') {
+        taps = 3;
+      }
+
+      let count = 0;
+      const gap = state === 'HIGH' ? 90 : 125;
+      if (tapTimer) {
+        clearTimeout(tapTimer);
+      }
+
+      const tick = () => {
+        catStage.classList.remove('tap-a', 'tap-b');
+        void catStage.offsetWidth;
+        catStage.classList.add(count % 2 === 0 ? 'tap-a' : 'tap-b');
+        count += 1;
+        if (count < taps) {
+          tapTimer = setTimeout(tick, gap);
+        }
+      };
+
+      tick();
+    }
+
+    detailBtn.addEventListener('click', () => {
+      const next = !detailsVisible;
+      setDetailsVisible(next);
+      ipcRenderer.send('mini-toggle-details', next);
+    });
+
+    skinBtn.addEventListener('click', () => {
+      cycleSkin(1);
+    });
+
+    skinModeBtn.addEventListener('click', () => {
+      setSkinMode(skinPrefs.mode === 'manual' ? 'auto' : 'manual');
+    });
+
+    skinPrevBtn.addEventListener('click', () => {
+      cycleSkin(-1);
+    });
+
+    skinNextBtn.addEventListener('click', () => {
+      cycleSkin(1);
+    });
+
+    buildBlocks(claudeBlocks);
+    buildBlocks(codexBlocks);
+    updateSkinUi();
+
+    ipcRenderer.on('usage-update', (_event, payload) => {
+      latestPayload = payload || null;
+      const state = payload && payload.state ? payload.state : 'CALM';
+      const provider = payload && payload.activeProvider ? payload.activeProvider : 'neutral';
+
+      updatedEl.textContent = payload && payload.updatedAt ? payload.updatedAt : '--:--:--';
+      setDetailsVisible(payload && typeof payload.detailsVisible === 'boolean' ? payload.detailsVisible : false);
+
+      paintRow(claudeRow, claudeValue, claudeBlocks, payload ? payload.claude : null);
+      paintRow(codexRow, codexValue, codexBlocks, payload ? payload.codex : null);
+      paintDetailLines(payload ? payload.claude : null, claudeDetail5hLine, claudeDetail7dLine);
+      paintDetailLines(payload ? payload.codex : null, codexDetail5hLine, codexDetail7dLine);
+
+      applyWidgetState(state);
+      updateActiveRows(provider);
+      repaintSkin(payload || {});
+      runTap(state, payload || {});
+    });
+  </script>
+</body>
+</html>
