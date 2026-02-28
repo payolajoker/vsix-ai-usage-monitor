@@ -3,7 +3,7 @@
   "displayName": "AI Usage Monitor",
   "description": "Displays real-time Claude and Codex usage in the VS Code status bar",
   "icon": "icon.png",
-  "version": "0.2.4",
+  "version": "0.2.7",
   "publisher": "PayolaJoker",
   "author": "Payola Joker",
   "license": "MIT",
@@ -29,7 +29,8 @@
   "contributes": {},
   "scripts": {
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "probe:codex-web": "node tools/codex-rate-limit-check-server.mjs"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",
