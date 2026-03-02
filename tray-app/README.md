@@ -1,25 +1,40 @@
 # AI Usage Tray (Electron)
 
-Windows tray app for Claude + Codex usage monitoring.
+Windows tray companion app for monitoring Claude + Codex usage with a mini HUD and game-style progression.
+
+## Current Version
+
+- Package: `0.3.6`
+- Electron: `35.7.5`
+- electron-builder: `26.8.1`
 
 ## Features
 
-- Tray icon app with no main window
-- Always-on mini pet widget near the clock (default on)
-- Compact mode + expandable drawer panel
-- Pixel-style HUD + block gauges for Claude/Codex
-- State-driven cat animation: `CALM`, `WATCH`, `HIGH`, `ERROR`, `STALE`
-- Skin system using local cat assets (`assets/cat`) with:
-  - Auto skin mode (state/provider-based)
-  - Manual lock mode with previous/next skin controls
-  - Local persistence (renderer localStorage)
-- Expandable panel for 5h/7d usage and reset timers
-- Tooltip summary for Claude/Codex 5-hour usage
-- Context menu with 5-hour and 7-day details
-- Tray menu toggle: show/hide mini window, reposition mini window, focus mode
+- Always-on mini widget near the Windows taskbar clock
+- Compact/expanded layout with main-process-authoritative detail toggle (`mini-toggle-details`)
+- Usage states: `CALM`, `WATCH`, `HIGH`, `ERROR`, `STALE`
+- Manual skin switching only (detail view `<` / `>` controls)
+- Game system integrated into refresh cycle:
+  - XP + level progression (cap 50)
+  - Rebirth flow
+  - 35 achievements with badge assets
+  - Daily/weekly quests
+  - Persistent game state (`gamedata.json` in Electron `userData`)
+- Tabs in expanded view: `STAT`, `QUEST`, `BADGE`
+- Achievement toast UI + optional sound effects (`SOUND` toggle)
+- 70% / 85% usage notifications (AppUserModelId + title: `AI USAGE`)
+- Data source:
+  - Claude OAuth usage API
+  - Codex `app-server` primary + session fallback
 - 60-second auto refresh
-- Windows toast notifications at 70% and 85% thresholds
-- Codex source: `codex app-server` first, `~/.codex/sessions` fallback
+
+## Key Files
+
+- `main.js` - Electron main process, window/tray lifecycle, IPC, refresh pipeline
+- `mini.html` - Mini widget UI/UX and renderer-side game interactions
+- `game-config.js` - XP curves, achievements, mission definitions, unlock tables
+- `game-engine.js` - Game logic (refresh processing, interaction handling, progression)
+- `game-store.js` - Persistent game data store and rollover/archive logic
 
 ## Run
 
@@ -29,7 +44,9 @@ npm install
 npm run start
 ```
 
-## Build EXE (Portable)
+## Build
+
+Build portable EXE:
 
 ```bash
 cd tray-app
@@ -37,9 +54,11 @@ npm install
 npm run package:win
 ```
 
-Output is generated under `tray-app/dist/`.
+Build APPX:
 
-## Microsoft Store Path
+```bash
+cd tray-app
+npm run package:store
+```
 
-`npm run package:store` produces an AppX target.  
-To publish to Store, you still need Partner Center setup and package signing / identity alignment.
+Outputs are written to `tray-app/dist/`.

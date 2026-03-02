@@ -1,94 +1,71 @@
-# Project Analysis
+# Project Analysis (Updated: 2026-03-02)
 
-> Note: This file is an older baseline snapshot.
-> For the latest cross-project status (extension + tray app), read `SESSION_HANDOFF.md`.
+This snapshot covers the current workspace state.
 
 ## 1) Overview
-- Project: `AI Usage Monitor` (`ai-usage-statusbar`)
-- Type: VS Code extension
-- Goal: Show Claude and Codex usage in the VS Code status bar
-- Current version: `0.2.5`
 
-## 2) Stack and Build
-- Language: TypeScript
-- Runtime: Node.js (VS Code Extension Host)
-- Build command: `tsc -p ./`
-- Key compiler settings:
-  - `module: commonjs`
-  - `target: ES2020`
-  - `rootDir: src`
-  - `outDir: out`
-  - `strict: false`
+- Project: `AI Usage Monitor`
+- Products:
+  - VS Code extension `ai-usage-statusbar` (`0.2.7`)
+  - Electron tray app `ai-usage-tray` (`0.3.6`)
+- Goal: realtime Claude/Codex usage visibility in-editor and in a desktop mini HUD
 
-Build verification:
-- `npm run compile` completed successfully.
+## 2) Stack
 
-## 3) Source Structure
-- Main logic is in one file:
-  - `src/extension.ts`
-- Entry points:
-  - `activate()`: creates status bar items, does initial refresh, starts 60s refresh timer
-  - `deactivate()`: clears timer
+- Extension:
+  - TypeScript + VS Code Extension Host
+  - Build: `npm run compile`
+- Tray app:
+  - Electron (`35.7.5`)
+  - Packaging: electron-builder (`26.8.1`)
+  - Main UI: `mini.html` + main process IPC
 
-## 4) Runtime Behavior
-### 4-1. Shared rendering flow
-- `doRefresh()` fetches Claude and Codex usage in parallel.
-- `renderBar()` updates status bar text, color, and tooltip.
-- Color thresholds:
-  - >= 70%: yellow
-  - >= 85%: red
+## 3) Runtime Data Sources
 
-### 4-2. Claude usage flow
-- Reads OAuth token from `~/.claude/.credentials.json`
-- Calls `GET https://api.anthropic.com/api/oauth/usage`
-- Uses `Authorization` and `anthropic-beta` headers
-- Maps:
-  - `five_hour.utilization`, `five_hour.resets_at`
-  - `seven_day.utilization`, `seven_day.resets_at`
+- Claude: OAuth usage API (`~/.claude/.credentials.json` token source)
+- Codex:
+  - Primary: `codex app-server` (`account/rateLimits/read`)
+  - Fallback: local session parsing
 
-### 4-3. Codex usage flow
-- Scans `~/.codex/sessions`
-- Recursively finds `.jsonl` files and checks newest files first
-- Parses up to 5 recent files for `event_msg -> token_count -> rate_limits`
-- Maps:
-  - `primary.used_percent`, `primary.resets_at`
-  - `secondary.used_percent`, `secondary.resets_at`
+## 4) Current Architecture Notes
+
+### Extension
+
+- Core logic in `src/extension.ts`
+- 60-second polling timer
+- Status bar + tooltip rendering with threshold coloring
+
+### Tray App
+
+- Main process:
+  - window/tray lifecycle
+  - refresh orchestration
+  - notification/positioning logic
+  - game IPC handlers
+- Renderer (`mini.html`):
+  - compact/expanded HUD
+  - tabs: `STAT`, `QUEST`, `BADGE`
+  - achievement toast and sound toggle
+- Game modules:
+  - `game-config.js` (definitions)
+  - `game-engine.js` (rules/progression)
+  - `game-store.js` (persistent data/rollover)
 
 ## 5) Strengths
-- Clear user value with fast status visibility in editor UI
-- Unified display model for both Claude and Codex
-- Safe fallback on failures with warning indicator
-- Small, readable codebase that is easy to reason about
 
-## 6) Risks and Gaps
-1. Synchronous file I/O
-- Heavy usage of `readFileSync`, `readdirSync`, and `statSync` can block extension host under larger data sets.
+- End-to-end local monitoring workflow with no external relay
+- Dual-surface UX (editor + tray)
+- Stabilization fixes applied to tray rendering/toggle path
+- Modularized game logic (config/engine/store split)
 
-2. Low type strictness
-- `strict: false` and `any` reduce compile-time safety.
+## 6) Risks / Gaps
 
-3. Fragile Codex parsing assumptions
-- Parsing depends on a specific event structure and may break if session log schema changes.
-
-4. No tests
-- Missing unit/integration tests increases regression risk.
-
-5. Internal documentation gap
-- README is user-focused; maintainers lacked a dedicated analysis baseline.
+1. Tray packaging can take long in automation contexts; command timeout handling needs clear CI policy.
+2. Automated tests are still limited (mainly compile/syntax/smoke + visual evidence artifacts).
+3. Extension/tray release/versioning workflow is still largely manual.
 
 ## 7) Recommended Next Steps
-1. Move filesystem reads to `fs.promises` async paths.
-2. Enable TypeScript strictness incrementally.
-3. Harden Codex parser with schema guards and fallback field handling.
-4. Add tests for:
-  - `toPercent`
-  - `formatReset`
-  - usage parsing logic
-5. Standardize error messages for user-facing vs debug contexts.
 
-## 8) Maintenance Notes
-- This file is the baseline analysis snapshot.
-- Future updates should add:
-  - VSIX release flow details
-  - version-by-version change table
-  - simple performance metrics (refresh time, scan time)
+1. Add smoke tests for tray IPC contracts and renderer event handling.
+2. Add scripted release checklist (compile, package, artifact verification, docs sync).
+3. Add lightweight unit tests for game progression and mission rollover logic.
