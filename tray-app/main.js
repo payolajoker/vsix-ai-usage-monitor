@@ -1,9 +1,11 @@
-const { app, Tray, Menu, Notification, nativeImage, BrowserWindow, screen, ipcMain } = require('electron');
+const { app, Notification, BrowserWindow, screen, ipcMain } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const https = require('https');
 const path = require('path');
 const { spawn } = require('child_process');
+const gameStore = require('./game-store');
+const gameEngine = require('./game-engine');
 
 const HOME = os.homedir();
 const REFRESH_MS = 60_000;
@@ -18,11 +20,16 @@ const CLAUDE_OAUTH_BETA = 'oauth-2025-04-20';
 const CLAUDE_OAUTH_SCOPE = 'user:profile user:inference user:sessions:claude_code user:mcp_servers';
 const CLAUDE_OAUTH_CLIENT_ID =
   process.env.CLAUDE_CODE_OAUTH_CLIENT_ID || '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
+const APP_USER_MODEL_ID = 'AI USAGE';
 const MINI_WIDTH = 560;
-const MINI_HEIGHT = 228;
-const MINI_HEIGHT_DETAILS = 560;
+const MINI_HEIGHT = 238;
+const MINI_HEIGHT_DETAILS = 500;
+const INLINE_ROW_HEIGHT = 38;
+const SNAP_THRESHOLD = 20;
+const SNAP_MARGIN = 10;
+const WINDOW_POSITION_SAVE_DEBOUNCE_MS = 180;
+const TRAY_APP_VERSION = require('./package.json').version;
 
-let tray = null;
 let miniWin = null;
 let miniReady = false;
 let miniVisible = true;
@@ -30,6 +37,7 @@ let pendingMiniPayload = null;
 let refreshTimer = null;
 let isQuitting = false;
 let miniDetailsVisible = false;
+let inlineExpandedCount = 0;
 let focusMode = 'auto';
 let activeProviderHint = { provider: 'neutral', until: 0 };
 let previousPercents = { claude: null, codex: null };
@@ -44,11 +52,11 @@ let lastLevels = {
   codex: 0,
 };
 let displayListenerCleanup = null;
+let collapseTimer = null;
+let moveSaveTimer = null;
 
-app.setAppUserModelId('com.payolajoker.aiusagetray');
-app.on('window-all-closed', (event) => {
-  event.preventDefault();
-});
+app.setAppUserModelId(APP_USER_MODEL_ID);
+app.on('window-all-closed', () => {});
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -62,7 +70,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
-    createTray();
+    gameStore.init(app.getPath('userData'));
     createMiniWindow();
     registerIpc();
     registerDisplayListeners();
@@ -73,9 +81,18 @@ if (!gotLock) {
 
 app.on('before-quit', () => {
   isQuitting = true;
+  gameStore.saveSync();
   if (refreshTimer) {
     clearInterval(refreshTimer);
     refreshTimer = null;
+  }
+  if (collapseTimer) {
+    clearTimeout(collapseTimer);
+    collapseTimer = null;
+  }
+  if (moveSaveTimer) {
+    clearTimeout(moveSaveTimer);
+    moveSaveTimer = null;
   }
   if (displayListenerCleanup) {
     displayListenerCleanup();
@@ -83,47 +100,20 @@ app.on('before-quit', () => {
   }
 });
 
-function createTray() {
-  const iconPath = path.join(__dirname, 'assets', 'icon.png');
-  let icon = nativeImage.createFromPath(iconPath);
-  if (process.platform === 'win32') {
-    icon = icon.resize({ width: 16, height: 16 });
-  }
-
-  tray = new Tray(icon);
-  tray.setToolTip('AI Usage Tray');
-  tray.setContextMenu(buildInitialMenu());
-  tray.on('click', () => {
-    if (!isQuitting) {
-      refreshNow();
-    }
-  });
-}
-
-function buildInitialMenu() {
-  return Menu.buildFromTemplate([
-    { label: 'Loading usage...', enabled: false },
-    { type: 'separator' },
-    catFocusMenuTemplate(),
-    detailsMenuTemplate(),
-    { label: miniVisible ? 'Hide Mini Window' : 'Show Mini Window', click: () => toggleMiniWindow() },
-    { label: 'Reposition Mini Window', click: () => positionMiniWindow() },
-    { type: 'separator' },
-    { label: 'Refresh Now', click: () => refreshNow() },
-    { label: 'Quit', click: () => app.quit() },
-  ]);
-}
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection in tray app:', reason);
+});
 
 function createMiniWindow() {
   miniReady = false;
   pendingMiniPayload = null;
+  inlineExpandedCount = 0;
 
   miniWin = new BrowserWindow({
     width: MINI_WIDTH,
     height: getMiniHeight(),
     show: false,
     frame: false,
-    transparent: true,
     resizable: false,
     movable: true,
     minimizable: false,
@@ -132,7 +122,7 @@ function createMiniWindow() {
     skipTaskbar: true,
     alwaysOnTop: true,
     hasShadow: false,
-    backgroundColor: '#00000000',
+    backgroundColor: '#171024',
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -145,7 +135,11 @@ function createMiniWindow() {
 
   miniWin.webContents.on('did-finish-load', () => {
     miniReady = true;
-    positionMiniWindow();
+    const restored = restoreMiniWindowPosition();
+    ensureMiniWindowGeometry();
+    if (!restored) {
+      positionMiniWindow();
+    }
     if (miniVisible) {
       miniWin.showInactive();
     }
@@ -155,33 +149,212 @@ function createMiniWindow() {
     }
   });
 
-  miniWin.on('close', (event) => {
+  miniWin.webContents.on('render-process-gone', (_event, details) => {
     if (isQuitting) {
       return;
     }
-    event.preventDefault();
-    miniVisible = false;
-    miniWin.hide();
-    if (lastUsage.claude && lastUsage.codex) {
-      updateTray(lastUsage.claude, lastUsage.codex);
-    } else {
-      tray.setContextMenu(buildInitialMenu());
+    console.error('Mini window renderer crashed:', details);
+    recreateMiniWindow();
+  });
+
+  miniWin.on('moved', () => {
+    if (!miniWin || miniWin.isDestroyed()) return;
+    const bounds = miniWin.getBounds();
+    const display = screen.getPrimaryDisplay();
+    if (!display) return;
+    const area = display.workArea;
+    let { x, y } = bounds;
+    let snapped = false;
+
+    // Left edge snap
+    if (Math.abs(x - area.x) < SNAP_THRESHOLD) {
+      x = area.x + SNAP_MARGIN;
+      snapped = true;
     }
+    // Right edge snap
+    else if (Math.abs((x + bounds.width) - (area.x + area.width)) < SNAP_THRESHOLD) {
+      x = area.x + area.width - bounds.width - SNAP_MARGIN;
+      snapped = true;
+    }
+
+    // Top edge snap
+    if (Math.abs(y - area.y) < SNAP_THRESHOLD) {
+      y = area.y + SNAP_MARGIN;
+      snapped = true;
+    }
+    // Bottom edge snap
+    else if (Math.abs((y + bounds.height) - (area.y + area.height)) < SNAP_THRESHOLD) {
+      y = area.y + area.height - bounds.height - SNAP_MARGIN;
+      snapped = true;
+    }
+
+    if (snapped) {
+      miniWin.setPosition(Math.round(x), Math.round(y), false);
+    }
+
+    const finalX = snapped ? x : bounds.x;
+    const finalY = snapped ? y : bounds.y;
+    scheduleMiniWindowPositionSave(finalX, finalY);
+  });
+
+  miniWin.on('close', () => {
+    app.quit();
   });
 
   miniWin.on('closed', () => {
+    if (moveSaveTimer) {
+      clearTimeout(moveSaveTimer);
+      moveSaveTimer = null;
+    }
     miniReady = false;
     miniWin = null;
   });
 }
 
+function recreateMiniWindow() {
+  if (isQuitting) {
+    return;
+  }
+
+  miniReady = false;
+
+  if (miniWin && !miniWin.isDestroyed()) {
+    miniWin.destroy();
+  }
+
+  miniWin = null;
+  createMiniWindow();
+
+  if (lastUsage.claude || lastUsage.codex) {
+    updateMiniWindow(lastUsage.claude, lastUsage.codex, lastMiniMeta);
+  }
+}
+
 function registerIpc() {
+  const applyDetailsVisibility = (nextVisible) => {
+    setMiniDetailsVisible(Boolean(nextVisible));
+    sendMiniDetailsState();
+    return miniDetailsVisible;
+  };
+
   ipcMain.on('mini-set-focus-mode', (_event, nextMode) => {
     applyFocusMode(nextMode);
   });
 
+  ipcMain.handle('mini-toggle-details', (_event, nextVisible) => {
+    return applyDetailsVisibility(nextVisible);
+  });
+
   ipcMain.on('mini-toggle-details', (_event, nextVisible) => {
-    setMiniDetailsVisible(Boolean(nextVisible));
+    applyDetailsVisibility(nextVisible);
+  });
+
+  // ── 게임 IPC ──
+  ipcMain.handle('game-pet-click', () => {
+    try {
+      const game = gameStore.getData();
+      if (!game) return null;
+      const events = gameEngine.processPetClick(game);
+      gameStore.markDirty();
+      gameStore.save();
+      return { events, summary: gameEngine.getGameSummary(game) };
+    } catch (err) {
+      console.error('[IPC] game-pet-click error:', err.message);
+      return null;
+    }
+  });
+
+  ipcMain.handle('game-interaction', (_event, type) => {
+    try {
+      const game = gameStore.getData();
+      if (!game) return null;
+      const events = gameEngine.processInteraction(game, type);
+      gameStore.markDirty();
+      gameStore.save();
+      return { events, summary: gameEngine.getGameSummary(game) };
+    } catch (err) {
+      console.error('[IPC] game-interaction error:', err.message);
+      return null;
+    }
+  });
+
+  ipcMain.handle('game-set-skin', (_event, skinId) => {
+    try {
+      const game = gameStore.getData();
+      if (!game) return null;
+      if (game.unlockedSkins.includes(skinId)) {
+        game.activeSkin = skinId;
+        gameStore.markDirty();
+        gameStore.save();
+      }
+      return gameEngine.getGameSummary(game);
+    } catch (err) {
+      console.error('[IPC] game-set-skin error:', err.message);
+      return null;
+    }
+  });
+
+  ipcMain.handle('game-set-sound', (_event, { enabled, volume }) => {
+    try {
+      const game = gameStore.getData();
+      if (!game) return null;
+      if (enabled !== undefined) game.soundEnabled = enabled;
+      if (volume !== undefined) game.soundVolume = volume;
+      gameStore.markDirty();
+      gameStore.save();
+      return { soundEnabled: game.soundEnabled, soundVolume: game.soundVolume };
+    } catch (err) {
+      console.error('[IPC] game-set-sound error:', err.message);
+      return null;
+    }
+  });
+
+  ipcMain.handle('game-rebirth', () => {
+    try {
+      const game = gameStore.getData();
+      if (!game) return null;
+      const result = gameEngine.doRebirth(game);
+      if (result.success) {
+        gameStore.markDirty();
+        gameStore.save();
+      }
+      return { result, summary: gameEngine.getGameSummary(game) };
+    } catch (err) {
+      console.error('[IPC] game-rebirth error:', err.message);
+      return null;
+    }
+  });
+
+  ipcMain.handle('game-migrate-skin', (_event, skinId) => {
+    try {
+      gameStore.migrateLegacySkin(skinId);
+      gameStore.save();
+      return true;
+    } catch (err) {
+      console.error('[IPC] game-migrate-skin error:', err.message);
+      return null;
+    }
+  });
+
+  // ── 인라인 디테일 확장/축소 ──
+  ipcMain.on('mini-inline-expand', (_event, expandedCount) => {
+    const count = Math.max(0, Math.min(2, Number(expandedCount) || 0));
+    if (count === inlineExpandedCount) return;
+    const wasExpanding = count > inlineExpandedCount;
+    inlineExpandedCount = count;
+
+    if (wasExpanding) {
+      ensureMiniWindowGeometry();
+    } else {
+      if (collapseTimer) {
+        clearTimeout(collapseTimer);
+        collapseTimer = null;
+      }
+      collapseTimer = setTimeout(() => {
+        collapseTimer = null;
+        ensureMiniWindowGeometry();
+      }, 240);
+    }
   });
 }
 
@@ -203,27 +376,140 @@ function registerDisplayListeners() {
 }
 
 function getMiniHeight() {
-  return miniDetailsVisible ? MINI_HEIGHT_DETAILS : MINI_HEIGHT;
+  const base = miniDetailsVisible ? MINI_HEIGHT_DETAILS : MINI_HEIGHT;
+  return base + (inlineExpandedCount * INLINE_ROW_HEIGHT);
 }
 
 function setMiniDetailsVisible(nextVisible) {
   if (miniDetailsVisible === nextVisible) {
+    sendMiniDetailsState();
     return;
   }
 
+  if (collapseTimer) {
+    clearTimeout(collapseTimer);
+    collapseTimer = null;
+  }
+
   miniDetailsVisible = nextVisible;
-  if (miniWin && !miniWin.isDestroyed()) {
-    miniWin.setSize(MINI_WIDTH, getMiniHeight(), false);
-    if (miniVisible) {
-      positionMiniWindow();
-    }
+  sendMiniDetailsState();
+
+  if (nextVisible) {
+    // Expanding: resize window first so CSS has room to animate into
+    ensureMiniWindowGeometry();
+  } else {
+    // Collapsing: let CSS transition (220ms) finish, then shrink window
+    collapseTimer = setTimeout(() => {
+      collapseTimer = null;
+      ensureMiniWindowGeometry();
+    }, 260);
   }
 
   if (lastUsage.claude || lastUsage.codex) {
-    updateTray(lastUsage.claude, lastUsage.codex);
     updateMiniWindow(lastUsage.claude, lastUsage.codex, lastMiniMeta);
-  } else {
-    tray.setContextMenu(buildInitialMenu());
+  }
+}
+
+function clampToWorkArea(x, y, w, h) {
+  const display = screen.getPrimaryDisplay();
+  if (!display) return { x, y };
+  const area = display.workArea;
+  return {
+    x: Math.max(area.x, Math.min(x, area.x + area.width - w)),
+    y: Math.max(area.y, Math.min(y, area.y + area.height - h)),
+  };
+}
+
+function ensureMiniWindowGeometry() {
+  if (!miniWin || miniWin.isDestroyed()) {
+    return;
+  }
+  if (collapseTimer) {
+    return; // Collapse animation in progress — defer resize
+  }
+
+  const bounds = miniWin.getBounds();
+  const targetHeight = getMiniHeight();
+  const display = screen.getPrimaryDisplay();
+  if (!display) return;
+  const area = display.workArea;
+
+  if (bounds.width !== MINI_WIDTH || bounds.height !== targetHeight) {
+    const isTopAnchored = (bounds.y - area.y) <= SNAP_THRESHOLD;
+
+    let newY;
+    if (isTopAnchored) {
+      newY = bounds.y; // Top anchor: y fixed, expand downward
+    } else {
+      newY = bounds.y + bounds.height - targetHeight; // Bottom anchor: bottom fixed, expand upward
+    }
+
+    const clamped = clampToWorkArea(bounds.x, newY, MINI_WIDTH, targetHeight);
+    miniWin.setBounds(
+      {
+        x: clamped.x,
+        y: clamped.y,
+        width: MINI_WIDTH,
+        height: targetHeight,
+      },
+      false
+    );
+  }
+
+  if (miniWin.webContents && !miniWin.webContents.isDestroyed()) {
+    miniWin.webContents.invalidate();
+  }
+}
+
+function scheduleMiniWindowPositionSave(x, y) {
+  if (moveSaveTimer) {
+    clearTimeout(moveSaveTimer);
+  }
+  moveSaveTimer = setTimeout(() => {
+    moveSaveTimer = null;
+    const game = gameStore.getData();
+    if (!game) return;
+    game.windowPosition = {
+      x: Math.round(x),
+      y: Math.round(y),
+    };
+    gameStore.markDirty();
+    gameStore.save();
+  }, WINDOW_POSITION_SAVE_DEBOUNCE_MS);
+}
+
+function restoreMiniWindowPosition() {
+  if (!miniWin || miniWin.isDestroyed()) return false;
+  const game = gameStore.getData();
+  const saved = game && game.windowPosition;
+  if (!saved || !Number.isFinite(saved.x) || !Number.isFinite(saved.y)) {
+    return false;
+  }
+  const display = screen.getPrimaryDisplay();
+  if (!display) return false;
+  const area = display.workArea;
+  const targetHeight = getMiniHeight();
+  if (saved.x < area.x || saved.x > area.x + area.width - MINI_WIDTH) {
+    return false;
+  }
+  if (saved.y < area.y || saved.y > area.y + area.height - targetHeight) {
+    return false;
+  }
+  miniWin.setPosition(Math.round(saved.x), Math.round(saved.y), false);
+  return true;
+}
+
+function sendMiniDetailsState() {
+  if (!miniWin || miniWin.isDestroyed()) {
+    return;
+  }
+  if (!miniWin.webContents || miniWin.webContents.isDestroyed()) {
+    return;
+  }
+  try {
+    miniWin.webContents.send('mini-details-state', miniDetailsVisible);
+  } catch {
+    // Window may be closing
   }
 }
 
@@ -233,50 +519,16 @@ function positionMiniWindow() {
   }
 
   try {
-    let area;
-    try {
-      const trayBounds = tray.getBounds();
-      if (trayBounds.width > 0 && trayBounds.height > 0) {
-        area = screen.getDisplayMatching(trayBounds).workArea;
-      } else {
-        area = screen.getPrimaryDisplay().workArea;
-      }
-    } catch {
-      area = screen.getPrimaryDisplay().workArea;
-    }
+    const display = screen.getPrimaryDisplay();
+    if (!display) return;
+    const area = display.workArea;
+    const bounds = miniWin.getBounds();
+    const currentHeight = bounds && bounds.height ? bounds.height : getMiniHeight();
     const x = Math.round(area.x + area.width - MINI_WIDTH - 10);
-    const y = Math.round(area.y + area.height - getMiniHeight() - 10);
+    const y = Math.round(area.y + area.height - currentHeight - 10);
     miniWin.setPosition(x, y, false);
   } catch {
     // Window was destroyed between check and setPosition
-  }
-}
-
-function toggleMiniWindow() {
-  if (!miniWin || miniWin.isDestroyed()) {
-    miniVisible = true;
-    createMiniWindow();
-    if (lastUsage.claude && lastUsage.codex) {
-      updateMiniWindow(lastUsage.claude, lastUsage.codex, lastMiniMeta);
-    }
-    return;
-  }
-
-  miniVisible = !miniVisible;
-  if (miniVisible) {
-    positionMiniWindow();
-    miniWin.showInactive();
-    if (lastUsage.claude && lastUsage.codex) {
-      updateMiniWindow(lastUsage.claude, lastUsage.codex, lastMiniMeta);
-    }
-  } else {
-    miniWin.hide();
-  }
-
-  if (lastUsage.claude && lastUsage.codex) {
-    updateTray(lastUsage.claude, lastUsage.codex);
-  } else {
-    tray.setContextMenu(buildInitialMenu());
   }
 }
 
@@ -298,10 +550,7 @@ function applyFocusMode(nextMode) {
 
   if (lastUsage.claude || lastUsage.codex) {
     lastMiniMeta = buildMiniMeta(lastUsage.claude, lastUsage.codex, { updateHistory: false });
-    updateTray(lastUsage.claude, lastUsage.codex);
     updateMiniWindow(lastUsage.claude, lastUsage.codex, lastMiniMeta);
-  } else {
-    tray.setContextMenu(buildInitialMenu());
   }
 }
 
@@ -321,90 +570,55 @@ async function refreshNow() {
   try {
     lastMiniMeta = buildMiniMeta(claude, codex, { updateHistory: true });
     lastUsage = { claude, codex };
-    updateTray(claude, codex);
+
+    // ── 게임 엔진 처리 ──
+    gameStore.checkRollover();
+    const game = gameStore.getData();
+    if (game) {
+      const c5 = getUsagePercent(claude, 'ratio');
+      const o5 = getUsagePercent(codex, 'percent');
+      const prevC5 = previousPercents.claude;
+      const prevO5 = previousPercents.codex;
+      const resetDetected =
+        (prevC5 != null && prevC5 >= 50 && c5 != null && c5 < 10) ||
+        (prevO5 != null && prevO5 >= 50 && o5 != null && o5 < 10);
+
+      const gameEvents = gameEngine.processRefresh(game, {
+        claude5h: c5 || 0,
+        codex5h: o5 || 0,
+        claudeTrend: lastMiniMeta.trend.claude,
+        codexTrend: lastMiniMeta.trend.codex,
+        claudeError: Boolean(claude && claude.error),
+        codexError: Boolean(codex && codex.error),
+        state: lastMiniMeta.state,
+        timestamp: Date.now(),
+        resetDetected,
+      });
+
+      gameStore.markDirty();
+      gameStore.save();
+
+      // 게임 이벤트를 페이로드에 포함
+      lastMiniMeta._gameEvents = gameEvents;
+    }
+
     updateMiniWindow(claude, codex, lastMiniMeta);
     maybeNotify('Claude', claude, 'ratio');
     maybeNotify('Codex', codex, 'percent');
-  } catch {
-    // Prevent refresh cycle from breaking; next interval will retry
+  } catch (err) {
+    console.error('[refreshNow]', err.message || err);
   }
-}
-
-function catFocusMenuTemplate() {
-  return {
-    label: `Cat Focus (${focusMode.toUpperCase()})`,
-    submenu: [
-      { label: 'Auto', type: 'radio', checked: focusMode === 'auto', click: () => applyFocusMode('auto') },
-      { label: 'Claude', type: 'radio', checked: focusMode === 'claude', click: () => applyFocusMode('claude') },
-      { label: 'Codex', type: 'radio', checked: focusMode === 'codex', click: () => applyFocusMode('codex') },
-    ],
-  };
-}
-
-function detailsMenuTemplate() {
-  return {
-    label: 'Show Details Panel',
-    type: 'checkbox',
-    checked: miniDetailsVisible,
-    click: (item) => setMiniDetailsVisible(item.checked),
-  };
-}
-
-function updateTray(claude, codex) {
-  const claudeSegment = toSegment('C', 'claude', claude, 'ratio');
-  const codexSegment = toSegment('O', 'codex', codex, 'percent');
-
-  const tooltip = `AI Usage - ${claudeSegment.compact} | ${codexSegment.compact}`;
-  tray.setToolTip(tooltip);
-
-  const template = [
-    { label: `Claude 5h: ${claudeSegment.fiveHour}`, enabled: false },
-    { label: `Claude 7d: ${claudeSegment.sevenDay}`, enabled: false },
-    { type: 'separator' },
-    { label: `Codex 5h: ${codexSegment.fiveHour}`, enabled: false },
-    { label: `Codex 7d: ${codexSegment.sevenDay}`, enabled: false },
-    { type: 'separator' },
-    catFocusMenuTemplate(),
-    detailsMenuTemplate(),
-    { label: miniVisible ? 'Hide Mini Window' : 'Show Mini Window', click: () => toggleMiniWindow() },
-    { label: 'Reposition Mini Window', click: () => positionMiniWindow() },
-    { type: 'separator' },
-    { label: 'Refresh Now', click: () => refreshNow() },
-    { label: 'Quit', click: () => app.quit() },
-  ];
-
-  tray.setContextMenu(Menu.buildFromTemplate(template));
-}
-
-function toSegment(shortName, provider, usage, scale) {
-  if (usage.error || !usage.fiveHour) {
-    const reason = summarizeUsageError(provider, usage.error || 'No data');
-    return {
-      compact: `${shortName} --`,
-      fiveHour: `-- (${reason})`,
-      sevenDay: '--',
-    };
-  }
-
-  const used5h = toPercent(usage.fiveHour.utilization, scale);
-  const reset5h = formatReset(usage.fiveHour.resetsAt);
-  const compact = `${shortName} ${used5h}%${reset5h ? ` ${reset5h}` : ''}`;
-  const fiveHour = `${used5h}%${reset5h ? ` (resets ${reset5h})` : ''}`;
-
-  let sevenDay = '--';
-  if (usage.sevenDay) {
-    const used7d = toPercent(usage.sevenDay.utilization, scale);
-    const reset7d = formatReset(usage.sevenDay.resetsAt);
-    sevenDay = `${used7d}%${reset7d ? ` (resets ${reset7d})` : ''}`;
-  }
-
-  return { compact, fiveHour, sevenDay };
 }
 
 function updateMiniWindow(claude, codex, meta = makeDefaultMiniMeta()) {
   if (!miniWin || miniWin.isDestroyed()) {
     return;
   }
+
+  ensureMiniWindowGeometry();
+
+  const game = gameStore.getData();
+  const gameSummary = game ? gameEngine.getGameSummary(game) : null;
 
   const payload = {
     claude: toMiniPayload('claude', claude, 'ratio', meta.trend.claude, meta.changed.claude, meta.crossings.claude),
@@ -415,6 +629,8 @@ function updateMiniWindow(claude, codex, meta = makeDefaultMiniMeta()) {
     state: meta.state,
     stale: meta.stale,
     detailsVisible: miniDetailsVisible,
+    game: gameSummary,
+    gameEvents: meta._gameEvents || null,
   };
 
   if (!miniReady) {
@@ -448,8 +664,8 @@ function toMiniPayload(provider, usage, scale, trend = 0, changed = false, cross
 
   const used5h = toPercent(usage.fiveHour.utilization, scale);
   const used7d = usage.sevenDay ? toPercent(usage.sevenDay.utilization, scale) : null;
-  const reset5h = formatReset(usage.fiveHour.resetsAt);
-  const reset7d = usage.sevenDay ? formatReset(usage.sevenDay.resetsAt) : '';
+  const reset5h = formatReset(usage.fiveHour.resetsAt, '5h');
+  const reset7d = usage.sevenDay ? formatReset(usage.sevenDay.resetsAt, '7d') : '';
   const level = used5h >= DANGER_THRESHOLD ? 2 : used5h >= WARN_THRESHOLD ? 1 : 0;
 
   return {
@@ -465,37 +681,6 @@ function toMiniPayload(provider, usage, scale, trend = 0, changed = false, cross
     warnCrossed: Boolean(crossings.warn),
     dangerCrossed: Boolean(crossings.danger),
   };
-}
-
-function summarizeUsageError(provider, errorText) {
-  const detail = formatUsageErrorDetail(provider, errorText);
-  const text = String(detail || '').toLowerCase();
-  if (!text) {
-    return 'NO DATA';
-  }
-
-  if (text.includes('claude cli relogin required')) {
-    return 'CLAUDE CLI RELOGIN REQUIRED';
-  }
-  if (text.includes('claude cli login required')) {
-    return 'CLAUDE CLI LOGIN REQUIRED';
-  }
-  if (text.includes('codex cli login required')) {
-    return 'CODEX CLI LOGIN REQUIRED';
-  }
-  if (text.includes('codex cli data missing')) {
-    return 'RUN CODEX ONCE';
-  }
-  if (text.includes('codex cli not found')) {
-    return 'CODEX CLI NOT FOUND';
-  }
-  if (text.includes('timeout')) {
-    return 'TIMEOUT';
-  }
-  if (detail.length > 42) {
-    return `${detail.slice(0, 42)}...`;
-  }
-  return detail;
 }
 
 function makeDefaultMiniMeta() {
@@ -608,8 +793,8 @@ function buildMiniMeta(claude, codex, options = { updateHistory: true }) {
     state = 'STALE';
   } else if (Math.max(levelClaude, levelCodex) >= 2) {
     state = 'HIGH';
-  } else if (Math.max(levelClaude, levelCodex) >= 1) {
-    state = 'WATCH';
+  } else if (changed.claude || changed.codex) {
+    state = 'USING';
   }
 
   if (options.updateHistory) {
@@ -643,8 +828,8 @@ function maybeNotify(name, usage, scale) {
   if (level > previous) {
     const stage = level === 2 ? 'Critical' : 'Warning';
     new Notification({
-      title: `AI Usage Tray - ${name}`,
-      body: `${stage}: ${used}% used in 5-hour window.`,
+      title: 'AI USAGE',
+      body: `${name} ${stage}: ${used}% used in 5-hour window.`,
     }).show();
   }
 
@@ -656,14 +841,19 @@ function toPercent(utilization, scale) {
   return Math.max(0, Math.min(100, Math.round(raw)));
 }
 
-function formatReset(iso) {
+function formatReset(iso, windowType = '5h') {
   if (!iso) {
     return '';
   }
   try {
     const diff = Math.max(0, new Date(iso).getTime() - Date.now());
+    const d = Math.floor(diff / 86_400_000);
     const h = Math.floor(diff / 3_600_000);
     const m = Math.floor((diff % 3_600_000) / 60_000);
+    if (windowType === '7d' && d > 0) {
+      const remHours = Math.floor((diff % 86_400_000) / 3_600_000);
+      return `${d}d ${remHours}h`;
+    }
     if (h > 0) {
       return `${h}h ${m}m`;
     }
@@ -964,7 +1154,7 @@ function readCodexRateLimitsFromAppServer() {
       id: CODEX_INIT_REQUEST_ID,
       method: 'initialize',
       params: {
-        clientInfo: { name: 'ai-usage-tray', version: '0.1.0' },
+        clientInfo: { name: 'ai-usage-tray', version: TRAY_APP_VERSION },
         capabilities: { experimentalApi: true },
       },
     });

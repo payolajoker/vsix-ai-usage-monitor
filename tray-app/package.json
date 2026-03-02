@@ -1,9 +1,13 @@
 {
   "name": "ai-usage-tray",
-  "version": "0.1.0",
+  "version": "0.3.6",
   "private": true,
   "description": "Windows tray monitor for Claude and Codex usage",
   "author": "Payola Joker",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/payolajoker/vsix-ai-usage-monitor.git"
+  },
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -12,14 +16,17 @@
     "package:store": "electron-builder --win appx"
   },
   "devDependencies": {
-    "electron": "^34.2.0",
-    "electron-builder": "^24.13.3"
+    "electron": "^35.7.5",
+    "electron-builder": "^26.8.1"
   },
   "build": {
     "appId": "com.payolajoker.aiusagetray",
     "productName": "AI Usage Tray",
     "files": [
       "main.js",
+      "game-config.js",
+      "game-engine.js",
+      "game-store.js",
       "mini.html",
       "assets/**",
       "package.json",

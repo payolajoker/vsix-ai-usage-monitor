@@ -19,6 +19,22 @@
       --shadow: rgba(0, 0, 0, 0.65);
     }
 
+    @font-face {
+      font-family: "Press Start 2P";
+      src: url("./assets/fonts/PressStart2P-Regular.woff2") format("woff2");
+      font-display: swap;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+    }
+
     * {
       box-sizing: border-box;
       user-select: none;
@@ -27,27 +43,23 @@
     }
 
     body {
-      margin: 0;
-      background: transparent;
       color: var(--ink);
       font-family: "Press Start 2P", "Consolas", "Malgun Gothic", monospace;
       font-size: 10px;
       zoom: var(--ui-scale);
-      overflow: hidden;
     }
 
     .widget {
-      width: calc(100% - 10px);
-      height: calc(100% - 10px);
-      margin: 5px;
+      width: 100%;
+      height: 100%;
+      margin: 0;
       padding: 8px;
-      border-radius: 24px;
+      border-radius: 0;
       background:
         radial-gradient(120% 100% at 14% -4%, rgba(255, 214, 153, 0.16), transparent 55%),
         radial-gradient(150% 110% at 105% 108%, rgba(121, 206, 255, 0.14), transparent 60%),
         linear-gradient(150deg, var(--bg-a), var(--bg-b));
       box-shadow:
-        0 14px 35px rgba(8, 3, 16, 0.5),
         inset 0 0 0 2px rgba(255, 255, 255, 0.06),
         inset 0 -18px 20px rgba(0, 0, 0, 0.2);
       display: grid;
@@ -56,6 +68,7 @@
       -webkit-app-region: drag;
       position: relative;
       overflow: hidden;
+      transition: box-shadow 220ms ease, filter 220ms ease;
     }
 
     .widget::before {
@@ -67,14 +80,12 @@
       opacity: 1;
     }
 
-    .widget.state-watch {
-      box-shadow:
-        0 14px 35px rgba(39, 22, 5, 0.42),
-        inset 0 0 0 2px rgba(255, 208, 103, 0.34),
-        inset 0 -18px 20px rgba(0, 0, 0, 0.2);
+    .widget.state-using {
+      /* CALM과 동일 — walk GIF 자체가 상태 표현 */
     }
 
     .widget.state-high {
+      filter: saturate(1.12) brightness(1.03);
       box-shadow:
         0 14px 35px rgba(58, 12, 18, 0.5),
         inset 0 0 0 2px rgba(255, 126, 126, 0.42),
@@ -124,18 +135,37 @@
       filter: drop-shadow(0 3px 0 var(--shadow));
     }
 
-    #catSprite.idle-bob {
-      animation: cat-idle 2.1s steps(2, end) infinite;
+    #catSprite.idle-float {
+      animation: cat-float 2.4s ease-in-out infinite;
     }
 
-    #catSprite.alert-bob {
-      animation: cat-alert 530ms steps(2, end) infinite;
+    #catSprite.idle-sway {
+      animation: cat-sway 1.2s ease-in-out infinite;
+    }
+
+    .cat-state {
+      position: absolute;
+      bottom: 7px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: inline-block;
+      min-width: 58px;
+      padding: 2px 6px;
+      border-radius: 9px;
+      text-align: center;
+      line-height: 1;
+      background: rgba(14, 9, 26, 0.78);
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+        0 2px 6px rgba(0, 0, 0, 0.35);
+      text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.75);
+      pointer-events: none;
     }
 
     .info {
       min-width: 0;
       display: grid;
-      grid-template-rows: auto auto auto auto;
+      grid-auto-rows: max-content;
       gap: 10px;
       align-content: start;
     }
@@ -186,11 +216,6 @@
         inset 0 0 0 1px rgba(255, 255, 255, 0.1);
     }
 
-    .btn.skin {
-      min-width: 52px;
-      background: linear-gradient(180deg, rgba(80, 56, 112, 0.96), rgba(54, 35, 79, 0.96));
-    }
-
     .btn.detail.active {
       background: linear-gradient(180deg, rgba(128, 67, 74, 0.95), rgba(84, 34, 46, 0.95));
     }
@@ -204,12 +229,37 @@
         inset 0 -6px 8px rgba(0, 0, 0, 0.2);
       display: grid;
       gap: 7px;
+      -webkit-app-region: no-drag;
+      cursor: pointer;
     }
 
     .usage-row.active {
       box-shadow:
         inset 0 0 0 1px rgba(255, 255, 255, 0.22),
         inset 0 -6px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .usage-row.row-expanded {
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+        inset 0 -6px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .inline-detail {
+      display: grid;
+      gap: 3px;
+      max-height: 0;
+      overflow: hidden;
+      opacity: 0;
+      padding: 0;
+      transition: max-height 200ms ease, opacity 160ms ease, padding 200ms ease;
+    }
+
+    .usage-row.row-expanded .inline-detail {
+      max-height: 40px;
+      opacity: 1;
+      padding-top: 4px;
+      border-top: 1px dashed rgba(255, 255, 255, 0.12);
     }
 
     .head {
@@ -277,21 +327,39 @@
     }
 
     .usage-row.error .pixel {
-      background: rgba(255, 126, 126, 0.3);
-      border-color: rgba(255, 202, 202, 0.38);
+      background: rgba(184, 174, 204, 0.26);
+      border-color: rgba(226, 218, 240, 0.22);
+      opacity: 0.65;
+    }
+
+    .usage-row.error .pixel:nth-child(4n + 1) {
+      opacity: 0.9;
     }
 
     .drawer {
-      display: none;
+      display: grid;
       gap: 5px;
       border-radius: 15px;
-      padding: 6px;
+      max-height: 0;
+      padding: 0 6px;
       background: rgba(13, 9, 20, 0.84);
       box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+      opacity: 0;
+      transform: translateY(-6px);
+      overflow: hidden;
+      pointer-events: none;
+      transition: max-height 220ms ease, opacity 180ms ease, transform 220ms ease, padding 220ms ease;
     }
 
     .widget.expanded .drawer {
-      display: grid;
+      max-height: 310px;
+      padding: 6px;
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.15) transparent;
     }
 
     .skin-card,
@@ -304,33 +372,61 @@
       gap: 3px;
     }
 
-    .detail-card.claude {
-      box-shadow:
-        inset 3px 0 0 rgba(255, 183, 109, 0.95),
-        inset 0 0 0 1px rgba(255, 255, 255, 0.06);
-    }
-
-    .detail-card.codex {
-      box-shadow:
-        inset 3px 0 0 rgba(124, 198, 255, 0.98),
-        inset 0 0 0 1px rgba(255, 255, 255, 0.06);
-    }
-
     .hline {
-      display: flex;
-      justify-content: space-between;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 52%);
       gap: 8px;
       line-height: 1.25;
-      white-space: nowrap;
       color: var(--muted);
       font-size: 7px;
+      align-items: center;
+    }
+
+    .hline span {
+      min-width: 0;
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .hline span:last-child {
       color: #f7f3ff;
-      max-width: 52%;
-      text-overflow: ellipsis;
+      text-align: right;
+      justify-self: end;
+      width: 100%;
+    }
+
+    .detail-header {
+      text-align: right;
+      font-size: 7px;
+      line-height: 1;
+      color: var(--muted);
+      letter-spacing: 0.4px;
+      border-bottom: 1px dashed rgba(255, 255, 255, 0.16);
+      padding-bottom: 4px;
+    }
+
+    .detail-row {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+      line-height: 1.15;
+      white-space: nowrap;
+    }
+
+    .detail-period {
+      color: var(--muted);
+      font-size: 7px;
+    }
+
+    .detail-value {
+      color: #f7f3ff;
+      font-size: 7px;
       overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
       text-align: right;
     }
 
@@ -343,20 +439,6 @@
     .skin-controls .btn {
       min-width: 34px;
       padding: 4px 5px;
-    }
-
-    .footer {
-      margin-top: 4px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      color: var(--muted);
-      font-size: 7px;
-      border-top: 1px dashed rgba(255, 255, 255, 0.16);
-      padding-top: 4px;
-      padding-right: 8px;
-      padding-left: 2px;
-      padding-bottom: 2px;
     }
 
     .state {
@@ -373,14 +455,14 @@
       color: var(--danger);
     }
 
-    @keyframes cat-idle {
+    @keyframes cat-float {
       0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-1px); }
+      50% { transform: translateY(-2px); }
     }
 
-    @keyframes cat-alert {
-      0%, 100% { transform: translate(0, 0); }
-      50% { transform: translate(1px, -1px); }
+    @keyframes cat-sway {
+      0%, 100% { transform: translateX(0); }
+      50% { transform: translateX(3px); }
     }
 
     @keyframes glitch {
@@ -401,19 +483,331 @@
       50% { transform: translate(2px, 1px); }
       100% { transform: translate(0, 0); }
     }
+
+    /* ── LV Label ── */
+    .lv-label {
+      color: #6de2ae;
+      margin-right: 4px;
+    }
+    .lv-color { color: #6de2ae !important; }
+
+    /* ── XP Bar (title 아래 1px) ── */
+    .xp-bar {
+      width: 100%;
+      height: 2px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 1px;
+      margin-top: 1px;
+      overflow: hidden;
+    }
+    .xp-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #6de2ae, #ffb76d);
+      border-radius: 1px;
+      transition: width 350ms ease;
+    }
+    .xp-bar-big {
+      height: 6px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 3px;
+      overflow: hidden;
+      margin: 2px 0;
+    }
+    .xp-bar-big .xp-fill {
+      height: 100%;
+      border-radius: 3px;
+    }
+
+    /* ── History Chart ── */
+    .history-chart {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 30px;
+      padding: 2px 0;
+    }
+    .history-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+      height: 100%;
+      justify-content: flex-end;
+    }
+    .history-bar {
+      width: 100%;
+      min-height: 2px;
+      border-radius: 2px 2px 0 0;
+      background: linear-gradient(180deg, #6de2ae, #3a9d6e);
+    }
+    .history-label {
+      font-size: 5px;
+      color: var(--muted);
+      line-height: 1;
+    }
+
+    /* ── Drawer Tabs ── */
+    .drawer-tabs {
+      display: flex;
+      gap: 2px;
+    }
+    .tab-btn {
+      flex: 1;
+      border: none;
+      border-radius: 8px 8px 0 0;
+      padding: 3px 0;
+      font: inherit;
+      font-size: 7px;
+      color: rgba(255,255,255,0.35);
+      background: rgba(255,255,255,0.03);
+      cursor: pointer;
+      -webkit-app-region: no-drag;
+      transition: background 120ms, color 120ms;
+    }
+    .tab-btn:hover { background: rgba(255,255,255,0.06); }
+    .tab-btn.active {
+      color: #ece1ff;
+      background: rgba(255,255,255,0.08);
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+
+    /* ── Quest list ── */
+    .quest-list { display: grid; gap: 2px; }
+    .quest-item {
+      display: grid;
+      grid-template-columns: 12px 1fr auto;
+      gap: 4px;
+      align-items: center;
+      font-size: 7px;
+      color: rgba(255,255,255,0.5);
+    }
+    .quest-item.done { color: #6de2ae; }
+    .quest-check { text-align: center; }
+    .quest-reward { color: #ffb76d; font-size: 6px; }
+
+    /* ── Badge grid ── */
+    .badge-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 3px;
+      padding: 2px 0;
+      max-height: 200px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.15) transparent;
+    }
+    .badge-grid::-webkit-scrollbar,
+    .drawer::-webkit-scrollbar {
+      width: 4px;
+    }
+    .badge-grid::-webkit-scrollbar-track,
+    .drawer::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .badge-grid::-webkit-scrollbar-thumb,
+    .drawer::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.15);
+      border-radius: 2px;
+    }
+    .badge-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+      padding: 3px 1px;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      cursor: default;
+      position: relative;
+      min-height: 30px;
+    }
+    .badge-cell.earned {
+      border-color: currentColor;
+      background: rgba(255,255,255,0.06);
+    }
+    .badge-cell.locked {
+      opacity: 0.35;
+      filter: grayscale(1);
+    }
+    .badge-cell.secret.locked .badge-icon {
+      filter: brightness(0);
+    }
+    .badge-icon {
+      width: 16px;
+      height: 16px;
+      image-rendering: pixelated;
+    }
+    .badge-name {
+      font-size: 4px;
+      color: rgba(255,255,255,0.5);
+      text-align: center;
+      line-height: 1.1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100%;
+    }
+    .badge-cell.earned .badge-name {
+      color: rgba(255,255,255,0.8);
+    }
+    /* Badge detail tooltip */
+    .badge-detail {
+      display: none;
+      position: fixed;
+      z-index: 200;
+      background: rgba(13, 9, 20, 0.96);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      padding: 4px 6px;
+      pointer-events: none;
+      max-width: 140px;
+    }
+    .badge-detail.show { display: block; }
+    .badge-detail-name {
+      font-size: 6px;
+      color: #ece1ff;
+      line-height: 1.2;
+    }
+    .badge-detail-desc {
+      font-size: 5px;
+      color: rgba(255,255,255,0.45);
+      line-height: 1.2;
+      margin-top: 1px;
+    }
+    .badge-detail-rarity {
+      font-size: 5px;
+      line-height: 1;
+      margin-top: 2px;
+    }
+
+    /* ── Achievement Toast ── */
+    .achievement-toast {
+      position: absolute;
+      bottom: 8px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: rgba(13, 9, 20, 0.95);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-size: 7px;
+      color: #ece1ff;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 300ms, transform 300ms;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .achievement-toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .achievement-toast.hidden { display: none; }
+    .achievement-toast .toast-icon {
+      width: 16px;
+      height: 16px;
+      image-rendering: pixelated;
+      flex-shrink: 0;
+    }
+    .achievement-toast .toast-text {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .achievement-toast .toast-title {
+      font-size: 7px;
+      line-height: 1;
+    }
+    .achievement-toast .toast-sub {
+      font-size: 6px;
+      line-height: 1;
+      display: flex;
+      gap: 4px;
+    }
+    .achievement-toast .toast-rarity {
+      font-size: 6px;
+    }
+    .achievement-toast .toast-xp {
+      color: #ffb76d;
+      font-size: 6px;
+    }
+    .hidden { display: none; }
+
+    /* ── Skin unlock status ── */
+    .skin-status {
+      font-size: 7px;
+      line-height: 1;
+      padding: 1px 0;
+    }
+    .skin-progress {
+      font-size: 6px;
+      color: rgba(255,255,255,0.35);
+      line-height: 1;
+    }
+    .skin-next-hint {
+      font-size: 6px;
+      color: rgba(255,255,255,0.25);
+      line-height: 1;
+    }
+    .sound-btn {
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 4px;
+      background: rgba(255,255,255,0.06);
+      color: #6de2ae;
+      font: inherit;
+      font-size: 7px;
+      padding: 1px 8px;
+      cursor: pointer;
+      -webkit-app-region: no-drag;
+    }
+    .sound-btn.off {
+      color: rgba(255,255,255,0.3);
+      border-color: rgba(255,255,255,0.1);
+    }
+
+    /* ── Level Up Flash ── */
+    @keyframes level-up-flash {
+      0% { color: #ffb76d; text-shadow: 0 0 8px #ffb76d; }
+      50% { color: #fff; text-shadow: 0 0 12px #ffb76d; }
+      100% { color: #ffb76d; text-shadow: 0 0 4px #ffb76d; }
+    }
+    .level-up-anim {
+      animation: level-up-flash 0.6s ease-in-out 3;
+    }
+
+    /* ── Cat jump (achievement) ── */
+    @keyframes cat-jump {
+      0%, 100% { transform: translateY(0); }
+      40% { transform: translateY(-6px); }
+    }
+    #catSprite.cat-jump {
+      animation: cat-jump 0.4s ease-out;
+    }
   </style>
 </head>
 <body>
   <div id="widget" class="widget state-calm">
     <div id="catStage" class="cat-stage">
-      <img id="catSprite" class="idle-bob" alt="Cat sprite" src="./assets/cat/ai_cat_robot_tail_pixel_1772220230915.png" />
+      <img id="catSprite" class="idle-float" alt="Cat sprite" src="./assets/cat/catidle_robot.png" />
+      <span id="stateText" class="state cat-state">CALM</span>
     </div>
 
     <div class="info">
       <div class="top">
-        <div class="title">AI USAGE</div>
+        <div class="title"><span id="lvLabel" class="lv-label">LV.1</span> <span id="titleName">AI USAGE</span></div>
+        <div id="xpBar" class="xp-bar"><div id="xpFill" class="xp-fill"></div></div>
         <div class="controls">
-          <button id="skinBtn" class="btn skin" type="button">SKIN</button>
           <button id="detailBtn" class="btn detail" type="button" title="Toggle panel">+</button>
         </div>
       </div>
@@ -424,6 +818,16 @@
           <span id="claudeValue" class="value">--</span>
         </div>
         <div id="claudeBlocks" class="blocks"></div>
+        <div class="inline-detail">
+          <div class="detail-row">
+            <span class="detail-period">5H</span>
+            <span id="claudeDetail5hLine" class="detail-value">-- / --</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-period">7D</span>
+            <span id="claudeDetail7dLine" class="detail-value">-- / --</span>
+          </div>
+        </div>
       </div>
 
       <div id="codexRow" class="usage-row codex">
@@ -432,51 +836,146 @@
           <span id="codexValue" class="value">--</span>
         </div>
         <div id="codexBlocks" class="blocks"></div>
+        <div class="inline-detail">
+          <div class="detail-row">
+            <span class="detail-period">5H</span>
+            <span id="codexDetail5hLine" class="detail-value">-- / --</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-period">7D</span>
+            <span id="codexDetail7dLine" class="detail-value">-- / --</span>
+          </div>
+        </div>
       </div>
 
       <div id="drawer" class="drawer">
-        <div class="skin-card">
-          <div class="hline"><span>SKIN MODE / NAME</span><span id="skinStateText">AUTO / CALICO</span></div>
-          <div class="skin-controls">
-            <button id="skinModeBtn" class="btn" type="button">AUTO</button>
-            <button id="skinPrevBtn" class="btn" type="button">&lt;</button>
-            <button id="skinNextBtn" class="btn" type="button">&gt;</button>
+        <div class="drawer-tabs">
+          <button class="tab-btn active" data-tab="skin" role="tab" aria-selected="true">SKIN</button>
+          <button class="tab-btn" data-tab="stats" role="tab" aria-selected="false">STATS</button>
+          <button class="tab-btn" data-tab="quest" role="tab" aria-selected="false">QUEST</button>
+          <button class="tab-btn" data-tab="badge" role="tab" aria-selected="false">BADGE</button>
+        </div>
+
+        <!-- SKIN TAB -->
+        <div id="tab-skin" class="tab-content active">
+          <div class="skin-card">
+            <div class="hline"><span>SKIN</span><span id="skinStateText">ROBOT</span></div>
+            <div id="skinStatus" class="skin-status" style="color:#6de2ae">✓</div>
+            <div class="skin-controls">
+              <button id="skinPrevBtn" class="btn" type="button">&lt;</button>
+              <button id="skinNextBtn" class="btn" type="button">&gt;</button>
+            </div>
+            <div id="skinProgress" class="skin-progress">1/12 SKINS</div>
+            <div id="skinNextHint" class="skin-next-hint" style="display:none"></div>
+          </div>
+          <div class="skin-card" style="margin-top:4px">
+            <div class="hline">
+              <span>SOUND</span>
+              <button id="soundBtn" class="sound-btn" type="button">ON</button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- STATS TAB -->
+        <div id="tab-stats" class="tab-content">
+          <div class="detail-card">
+            <div class="detail-row">
+              <span class="detail-period">LEVEL</span>
+              <span id="statsLevel" class="detail-value lv-color">LV.1</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-period">XP</span>
+              <span id="statsXp" class="detail-value">0 / 80</span>
+            </div>
+            <div class="xp-bar-big"><div id="xpFillBig" class="xp-fill"></div></div>
+            <div class="detail-row">
+              <span class="detail-period">STREAK</span>
+              <span id="statsStreak" class="detail-value">0 DAYS</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-period">BEST</span>
+              <span id="statsBestStreak" class="detail-value">0 DAYS</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-period">TODAY</span>
+              <span id="statsTodayXp" class="detail-value">+0 XP</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-period">BADGES</span>
+              <span id="statsBadges" class="detail-value">0 / 35</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-period">REBIRTH</span>
+              <span id="statsRebirth" class="detail-value">-</span>
+            </div>
+          </div>
+          <div class="detail-card" style="margin-top:4px">
+            <div class="detail-header">XP HISTORY (7D)</div>
+            <div id="xpHistoryChart" class="history-chart"></div>
+          </div>
+          <div class="detail-card" style="margin-top:4px">
+            <div class="detail-header">LIFETIME</div>
+            <div class="detail-row">
+              <span class="detail-period">BEATS</span>
+              <span id="statsTotalBeats" class="detail-value">0</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-period">DETECTS</span>
+              <span id="statsTotalDetects" class="detail-value">0</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-period">CLICKS</span>
+              <span id="statsTotalClicks" class="detail-value">0</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-period">DANGER</span>
+              <span id="statsTotalDanger" class="detail-value">0m</span>
+            </div>
           </div>
         </div>
 
-        <div class="detail-card claude">
-          <div class="hline"><span>CLAUDE 5H USED / RESET</span><span id="claudeDetail5hLine">-- / --</span></div>
-          <div class="hline"><span>CLAUDE 7D USED / RESET</span><span id="claudeDetail7dLine">-- / --</span></div>
+        <!-- QUEST TAB -->
+        <div id="tab-quest" class="tab-content">
+          <div class="detail-card">
+            <div class="detail-header" id="questDailyHeader">DAILY (0/3)</div>
+            <div id="questDailyList" class="quest-list"></div>
+            <div class="detail-header" id="questWeeklyHeader" style="margin-top:6px">WEEKLY (0/2)</div>
+            <div id="questWeeklyList" class="quest-list"></div>
+          </div>
         </div>
 
-        <div class="detail-card codex">
-          <div class="hline"><span>CODEX 5H USED / RESET</span><span id="codexDetail5hLine">-- / --</span></div>
-          <div class="hline"><span>CODEX 7D USED / RESET</span><span id="codexDetail7dLine">-- / --</span></div>
+        <!-- BADGE TAB -->
+        <div id="tab-badge" class="tab-content">
+          <div class="detail-card">
+            <div class="detail-header" id="badgeHeader">BADGES (0/35)</div>
+            <div id="badgeGrid" class="badge-grid"></div>
+          </div>
         </div>
+        <!-- Badge detail tooltip -->
+        <div id="badgeDetail" class="badge-detail"></div>
       </div>
 
-      <div class="footer">
-        <span id="updated">--:--:--</span>
-        <span id="stateText" class="state">CALM</span>
-      </div>
+      <!-- Achievement toast -->
+      <div id="achievementToast" class="achievement-toast hidden"></div>
     </div>
   </div>
 
   <script>
-    const { ipcRenderer } = require('electron');
+    const electronApi = typeof require === 'function' ? require('electron') : null;
+    const ipcRenderer = electronApi && electronApi.ipcRenderer
+      ? electronApi.ipcRenderer
+      : { on: () => {}, send: () => {}, invoke: async (_channel, value) => value };
 
     const widget = document.getElementById('widget');
     const catStage = document.getElementById('catStage');
     const catSprite = document.getElementById('catSprite');
 
     const detailBtn = document.getElementById('detailBtn');
-    const skinBtn = document.getElementById('skinBtn');
-    const skinModeBtn = document.getElementById('skinModeBtn');
     const skinPrevBtn = document.getElementById('skinPrevBtn');
     const skinNextBtn = document.getElementById('skinNextBtn');
     const skinStateText = document.getElementById('skinStateText');
 
-    const updatedEl = document.getElementById('updated');
     const stateTextEl = document.getElementById('stateText');
 
     const claudeRow = document.getElementById('claudeRow');
@@ -491,66 +990,204 @@
     const codexDetail5hLine = document.getElementById('codexDetail5hLine');
     const codexDetail7dLine = document.getElementById('codexDetail7dLine');
 
-    const SKIN_PREFS_KEY = 'ai_usage_tray_skin_prefs_v1';
+    const SKIN_PREFS_KEY = 'ai_usage_tray_skin_prefs_v2';
     const SKINS = [
-      { id: 'robot', name: 'ROBOT', file: 'ai_cat_robot_tail_pixel_1772220230915.png' },
-      { id: 'orange', name: 'ORANGE', file: 'ai_cat_orange_tabby_1772220649181.png' },
-      { id: 'calico', name: 'CALICO', file: 'ai_cat_calico_1772220679723.png' },
-      { id: 'grey', name: 'GREY', file: 'ai_cat_grey_1772220713087.png' },
-      { id: 'siamese', name: 'SIAMESE', file: 'ai_cat_siamese_1772220696514.png' },
-      { id: 'tuxedo', name: 'TUXEDO', file: 'ai_cat_tuxedo_1772220663562.png' },
-      { id: 'midnight', name: 'MIDNIGHT', file: 'ai_cat_midnight_1772220526710.png' },
-      { id: 'neon', name: 'NEON', file: 'ai_cat_neon_1772220368119.png' },
-      { id: 'fire', name: 'FIRE', file: 'ai_cat_fire_1772220510214.png' },
-      { id: 'pastel', name: 'PASTEL', file: 'ai_cat_pastel_1772220399188.png' },
-      { id: 'gameboy', name: 'GAMEBOY', file: 'ai_cat_gameboy_1772220384453.png' },
-      { id: 'mono', name: 'MONO', file: 'ai_cat_monochrome_1772220494765.png' },
+      { id: 'robot',    name: 'ROBOT',    unlockLevel: 0,  idle: 'catidle_robot.png',    walk: 'catwalkx4_robot.gif',    run: 'catrunx4_robot.gif' },
+      { id: 'orange',   name: 'ORANGE',   unlockLevel: 7,  idle: 'catidle_orange.png',   walk: 'catwalkx4_orange.gif',   run: 'catrunx4_orange.gif' },
+      { id: 'calico',   name: 'CALICO',   unlockLevel: 10, idle: 'catidle_calico.png',   walk: 'catwalkx4_calico.gif',   run: 'catrunx4_calico.gif' },
+      { id: 'grey',     name: 'GREY',     unlockLevel: 3,  idle: 'catidle_grey.png',     walk: 'catwalkx4_grey.gif',     run: 'catrunx4_grey.gif' },
+      { id: 'siamese',  name: 'SIAMESE',  unlockLevel: 12, idle: 'catidle_siamese.png',  walk: 'catwalkx4_siamese.gif',  run: 'catrunx4_siamese.gif' },
+      { id: 'tuxedo',   name: 'TUXEDO',   unlockLevel: 15, idle: 'catidle_tuxedo.png',   walk: 'catwalkx4_tuxedo.gif',   run: 'catrunx4_tuxedo.gif' },
+      { id: 'midnight', name: 'MIDNIGHT', unlockLevel: 17, idle: 'catidle_midnight.png', walk: 'catwalkx4_midnight.gif', run: 'catrunx4_midnight.gif' },
+      { id: 'neon',     name: 'NEON',     unlockLevel: 20, idle: 'catidle_neon.png',     walk: 'catwalkx4_neon.gif',     run: 'catrunx4_neon.gif' },
+      { id: 'fire',     name: 'FIRE',     unlockLevel: 25, idle: 'catidle_fire.png',     walk: 'catwalkx4_fire.gif',     run: 'catrunx4_fire.gif' },
+      { id: 'pastel',   name: 'PASTEL',   unlockLevel: 28, idle: 'catidle_pastel.png',   walk: 'catwalkx4_pastel.gif',   run: 'catrunx4_pastel.gif' },
+      { id: 'gameboy',  name: 'GAMEBOY',  unlockLevel: 35, idle: 'catidle_gameboy.png',  walk: 'catwalkx4_gameboy.gif',  run: 'catrunx4_gameboy.gif' },
+      { id: 'mono',     name: 'MONO',     unlockLevel: 40, idle: 'catidle_mono.png',     walk: 'catwalkx4_mono.gif',     run: 'catrunx4_mono.gif' },
     ];
 
-    const AUTO_SKIN_MAP = {
-      claude: {
-        CALM: 'ai_cat_orange_tabby_1772220649181.png',
-        WATCH: 'ai_cat_calico_1772220679723.png',
-        HIGH: 'ai_cat_fire_1772220510214.png',
-        ERROR: 'ai_cat_monochrome_1772220494765.png',
-        STALE: 'ai_cat_siamese_1772220696514.png',
-      },
-      codex: {
-        CALM: 'ai_cat_robot_tail_pixel_1772220230915.png',
-        WATCH: 'ai_cat_grey_1772220713087.png',
-        HIGH: 'ai_cat_neon_1772220368119.png',
-        ERROR: 'ai_cat_monochrome_1772220494765.png',
-        STALE: 'ai_cat_midnight_1772220526710.png',
-      },
-      neutral: {
-        CALM: 'ai_cat_calico_1772220679723.png',
-        WATCH: 'ai_cat_grey_1772220713087.png',
-        HIGH: 'ai_cat_neon_1772220368119.png',
-        ERROR: 'ai_cat_monochrome_1772220494765.png',
-        STALE: 'ai_cat_midnight_1772220526710.png',
-      },
-    };
+    // ── 업적 정의 (렌더러용) ──
+    const ACHIEVEMENT_DEFS = [
+      { id: 'first_boot',       name: 'FIRST BOOT',       desc: '첫 실행',                    rarity: 'COMMON',    color: '#f4ecff', xp: 50 },
+      { id: 'early_bird',       name: 'EARLY BIRD',       desc: '오전 7시 이전 가동',          rarity: 'COMMON',    color: '#f4ecff', xp: 50 },
+      { id: 'night_owl',        name: 'NIGHT OWL',        desc: '자정~새벽 4시 사이 가동',     rarity: 'COMMON',    color: '#f4ecff', xp: 50 },
+      { id: 'marathon',         name: 'MARATHON',          desc: '8시간 연속 가동',             rarity: 'RARE',      color: '#7cc6ff', xp: 100 },
+      { id: 'ironman',          name: 'IRONMAN',           desc: '24시간 연속 가동',            rarity: 'EPIC',      color: '#c87cff', xp: 200 },
+      { id: 'weekender',        name: 'WEEKENDER',         desc: '토+일 모두 사용',             rarity: 'COMMON',    color: '#f4ecff', xp: 75 },
+      { id: 'full_week',        name: 'FULL WEEK',         desc: '7일 연속 로그인',             rarity: 'RARE',      color: '#7cc6ff', xp: 150 },
+      { id: 'monthly_devotion', name: 'MONTHLY DEVOTION',  desc: '30일 연속 로그인',            rarity: 'EPIC',      color: '#c87cff', xp: 300 },
+      { id: 'quarterly_grind',  name: 'QUARTERLY GRIND',   desc: '90일 연속 로그인',            rarity: 'LEGENDARY', color: '#ffb76d', xp: 500 },
+      { id: 'first_steps',      name: 'FIRST STEPS',       desc: '첫 AI 사용 감지',            rarity: 'COMMON',    color: '#f4ecff', xp: 50 },
+      { id: 'power_user',       name: 'POWER USER',        desc: '5h 사용량 50% 도달',         rarity: 'COMMON',    color: '#f4ecff', xp: 75 },
+      { id: 'danger_zone',      name: 'DANGER ZONE',       desc: '5h 사용량 85% 도달',         rarity: 'RARE',      color: '#7cc6ff', xp: 100 },
+      { id: 'maxed_out',        name: 'MAXED OUT',         desc: '5h 사용량 99%+ 도달',        rarity: 'EPIC',      color: '#c87cff', xp: 200 },
+      { id: 'dual_wielder',     name: 'DUAL WIELDER',      desc: 'Claude+Codex 동시 활성',     rarity: 'RARE',      color: '#7cc6ff', xp: 100 },
+      { id: 'balanced',         name: 'BALANCED',          desc: '양쪽 차이 10% 이내',         rarity: 'RARE',      color: '#7cc6ff', xp: 150 },
+      { id: 'claude_loyalist',  name: 'CLAUDE LOYALIST',   desc: 'Claude 70%+ / Codex 0%',     rarity: 'RARE',      color: '#7cc6ff', xp: 100 },
+      { id: 'codex_devotee',    name: 'CODEX DEVOTEE',     desc: 'Codex 70%+ / Claude 0%',     rarity: 'RARE',      color: '#7cc6ff', xp: 100 },
+      { id: 'fresh_start',      name: 'FRESH START',       desc: '리셋 1회 목격',              rarity: 'COMMON',    color: '#f4ecff', xp: 50 },
+      { id: 'phoenix',          name: 'PHOENIX',           desc: '리셋 10회 누적',             rarity: 'RARE',      color: '#7cc6ff', xp: 150 },
+      { id: 'eternal_cycle',    name: 'ETERNAL CYCLE',     desc: '리셋 100회 누적',            rarity: 'LEGENDARY', color: '#ffb76d', xp: 500 },
+      { id: 'level_10',         name: 'LEVEL 10',          desc: 'LV10 도달',                  rarity: 'COMMON',    color: '#f4ecff', xp: 100 },
+      { id: 'level_25',         name: 'LEVEL 25',          desc: 'LV25 도달',                  rarity: 'RARE',      color: '#7cc6ff', xp: 200 },
+      { id: 'level_50',         name: 'LEVEL 50',          desc: 'LV50 도달',                  rarity: 'EPIC',      color: '#c87cff', xp: 400 },
+      { id: 'reborn',           name: 'REBORN',            desc: '첫 환생',                    rarity: 'LEGENDARY', color: '#ffb76d', xp: 500 },
+      { id: 'skin_collector',   name: 'SKIN COLLECTOR',    desc: '스킨 6개 해금',              rarity: 'RARE',      color: '#7cc6ff', xp: 100 },
+      { id: 'fashionista',      name: 'FASHIONISTA',       desc: '스킨 12개 전부 해금',        rarity: 'EPIC',      color: '#c87cff', xp: 300 },
+      { id: 'pet_the_cat',      name: 'PET THE CAT',       desc: '고양이 10회 클릭',           rarity: 'COMMON',    color: '#f4ecff', xp: 50 },
+      { id: 'cat_whisperer',    name: 'CAT WHISPERER',     desc: '고양이 100회 클릭',          rarity: 'RARE',      color: '#7cc6ff', xp: 100 },
+      { id: 'style_switch',     name: 'STYLE SWITCH',      desc: '스킨 20회 변경',             rarity: 'COMMON',    color: '#f4ecff', xp: 50 },
+      { id: 'drawer_explorer',  name: 'DRAWER EXPLORER',   desc: '드로어 50회 열기',           rarity: 'COMMON',    color: '#f4ecff', xp: 50 },
+      { id: 'not_found',        name: '404 CAT NOT FOUND', desc: '???',                        rarity: 'SECRET',    color: '#ff7e7e', xp: 150, hidden: true },
+      { id: 'perfectly_balanced', name: 'PERFECTLY BALANCED', desc: '???',                      rarity: 'SECRET',    color: '#ff7e7e', xp: 200, hidden: true },
+      { id: 'midnight_coder',   name: 'MIDNIGHT CODER',    desc: '???',                        rarity: 'SECRET',    color: '#ff7e7e', xp: 200, hidden: true },
+      { id: 'speed_demon',      name: 'SPEED DEMON',       desc: '???',                        rarity: 'SECRET',    color: '#ff7e7e', xp: 250, hidden: true },
+      { id: 'the_collector',    name: 'THE COLLECTOR',     desc: '???',                        rarity: 'SECRET',    color: '#ff7e7e', xp: 500, hidden: true },
+    ];
+    const ACHIEVEMENT_MAP = {};
+    ACHIEVEMENT_DEFS.forEach(a => ACHIEVEMENT_MAP[a.id] = a);
 
     let detailsVisible = false;
     let tapTimer = null;
     let latestPayload = null;
     let skinPrefs = loadSkinPrefs();
+    let currentState = 'CALM';
+
+    // ── Game UI refs ──
+    const lvLabel = document.getElementById('lvLabel');
+    const xpFill = document.getElementById('xpFill');
+    const xpFillBig = document.getElementById('xpFillBig');
+    const statsLevel = document.getElementById('statsLevel');
+    const statsXp = document.getElementById('statsXp');
+    const statsStreak = document.getElementById('statsStreak');
+    const statsBestStreak = document.getElementById('statsBestStreak');
+    const statsTodayXp = document.getElementById('statsTodayXp');
+    const statsBadges = document.getElementById('statsBadges');
+    const statsRebirth = document.getElementById('statsRebirth');
+    const statsTotalBeats = document.getElementById('statsTotalBeats');
+    const statsTotalDetects = document.getElementById('statsTotalDetects');
+    const statsTotalClicks = document.getElementById('statsTotalClicks');
+    const statsTotalDanger = document.getElementById('statsTotalDanger');
+    const questDailyHeader = document.getElementById('questDailyHeader');
+    const questDailyList = document.getElementById('questDailyList');
+    const questWeeklyHeader = document.getElementById('questWeeklyHeader');
+    const questWeeklyList = document.getElementById('questWeeklyList');
+    const badgeHeader = document.getElementById('badgeHeader');
+    const badgeGrid = document.getElementById('badgeGrid');
+    const achievementToast = document.getElementById('achievementToast');
+    let toastTimer = null;
+    let legacySkinMigrated = false;
+    let latestGameState = null;
+    let soundEnabled = true;
+    let soundVolume = 0.3;
+
+    // ── Sound System ──
+    const SOUND_FILES = {
+      click: 'click.ogg',
+      levelup: 'levelup.wav',
+      fanfare: 'fanfare.ogg',
+      mission: 'mission_done.wav',
+    };
+    const SFX = {};
+    function initSound() {
+      for (const [key, file] of Object.entries(SOUND_FILES)) {
+        try {
+          const audio = new Audio('./assets/sounds/' + file);
+          audio.preload = 'auto';
+          audio.volume = soundVolume;
+          audio.addEventListener('error', () => {
+            console.warn('[Sound] Failed:', file);
+            delete SFX[key];
+          });
+          SFX[key] = audio;
+        } catch (e) { /* ignore missing files */ }
+      }
+    }
+    function playSfx(key) {
+      if (!soundEnabled) return;
+      const audio = SFX[key];
+      if (!audio) return;
+      audio.volume = soundVolume;
+      audio.currentTime = 0;
+      audio.play().catch((err) => {
+        console.warn('[Sound] Play failed:', key);
+      });
+    }
+    initSound();
+
+    const soundBtn = document.getElementById('soundBtn');
+    function updateSoundBtn() {
+      if (!soundBtn) return;
+      soundBtn.textContent = soundEnabled ? 'ON' : 'OFF';
+      soundBtn.classList.toggle('off', !soundEnabled);
+    }
+    if (soundBtn) {
+      soundBtn.addEventListener('click', async () => {
+        const prev = soundEnabled;
+        soundEnabled = !soundEnabled;
+        updateSoundBtn();
+        if (soundEnabled) playSfx('click');
+        try {
+          await ipcRenderer.invoke('game-set-sound', { enabled: soundEnabled });
+        } catch {
+          soundEnabled = prev;
+          updateSoundBtn();
+        }
+      });
+    }
+    let claudeRowExpanded = false;
+    let codexRowExpanded = false;
+    let inlineClickLock = false;
+    let toastQueue = [];
+    let toastActive = false;
+
+    const skinStatus = document.getElementById('skinStatus');
+    const skinProgress = document.getElementById('skinProgress');
+    const skinNextHint = document.getElementById('skinNextHint');
+
+    function isSkinUnlocked(skinId) {
+      if (!latestGameState || !latestGameState.unlockedSkins) return skinId === 'robot';
+      return latestGameState.unlockedSkins.includes(skinId);
+    }
+
+    function snapToUnlockedSkin() {
+      const current = getManualSkin();
+      if (isSkinUnlocked(current.id)) return;
+      for (let i = 0; i < SKINS.length; i++) {
+        if (isSkinUnlocked(SKINS[i].id)) {
+          skinPrefs.skinIndex = i;
+          saveSkinPrefs();
+          repaintSkin();
+          return;
+        }
+      }
+    }
+
+    function getNextSkinUnlock() {
+      if (!latestGameState || !latestGameState.unlockedSkins) return null;
+      const unlockedSet = new Set(latestGameState.unlockedSkins);
+      let next = null;
+      for (const s of SKINS) {
+        if (!unlockedSet.has(s.id)) {
+          if (!next || s.unlockLevel < next.unlockLevel) next = s;
+        }
+      }
+      return next;
+    }
 
     function loadSkinPrefs() {
       try {
         const raw = localStorage.getItem(SKIN_PREFS_KEY);
         if (!raw) {
-          return { mode: 'auto', manualIndex: 0 };
+          return { skinIndex: 0 };
         }
         const parsed = JSON.parse(raw);
-        const mode = parsed && parsed.mode === 'manual' ? 'manual' : 'auto';
-        const index = Number.isInteger(parsed.manualIndex) ? parsed.manualIndex : 0;
+        const index = Number.isInteger(parsed && parsed.skinIndex) ? parsed.skinIndex : 0;
         return {
-          mode,
-          manualIndex: normalizeSkinIndex(index),
+          skinIndex: normalizeSkinIndex(index),
         };
       } catch {
-        return { mode: 'auto', manualIndex: 0 };
+        return { skinIndex: 0 };
       }
     }
 
@@ -571,7 +1208,7 @@
     }
 
     function getManualSkin() {
-      return SKINS[normalizeSkinIndex(skinPrefs.manualIndex)];
+      return SKINS[normalizeSkinIndex(skinPrefs.skinIndex)];
     }
 
     function buildBlocks(root, size = 20) {
@@ -679,59 +1316,77 @@
 
     function updateSkinUi() {
       const manualSkin = getManualSkin();
-      const modeText = skinPrefs.mode === 'manual' ? 'MANUAL' : 'AUTO';
-      skinStateText.textContent = `${modeText} / ${manualSkin.name}`;
-      skinModeBtn.textContent = skinPrefs.mode === 'manual' ? 'MAN' : 'AUTO';
-    }
+      skinStateText.textContent = manualSkin.name;
 
-    function setSkinMode(nextMode) {
-      skinPrefs.mode = nextMode === 'manual' ? 'manual' : 'auto';
-      saveSkinPrefs();
-      updateSkinUi();
-      if (latestPayload) {
-        repaintSkin(latestPayload);
+      // 잠금 상태
+      const unlocked = isSkinUnlocked(manualSkin.id);
+      if (skinStatus) {
+        if (unlocked) {
+          skinStatus.textContent = '✓';
+          skinStatus.style.color = '#6de2ae';
+        } else {
+          skinStatus.textContent = 'LV.' + manualSkin.unlockLevel;
+          skinStatus.style.color = '#ff7e7e';
+        }
+      }
+
+      // 해금 진행도
+      const totalUnlocked = latestGameState ? latestGameState.unlockedSkins.length : SKINS.length;
+      if (skinProgress) {
+        skinProgress.textContent = totalUnlocked + '/' + SKINS.length + ' SKINS';
+      }
+
+      // 다음 해금 힌트
+      if (skinNextHint) {
+        const next = getNextSkinUnlock();
+        if (next) {
+          skinNextHint.textContent = 'NEXT: LV.' + next.unlockLevel + ' ' + next.name;
+          skinNextHint.style.color = '';
+          skinNextHint.style.display = '';
+        } else if (latestGameState) {
+          skinNextHint.textContent = 'ALL UNLOCKED!';
+          skinNextHint.style.color = '#6de2ae';
+          skinNextHint.style.display = '';
+        } else {
+          skinNextHint.style.display = 'none';
+        }
       }
     }
 
     function cycleSkin(step) {
-      skinPrefs.manualIndex = normalizeSkinIndex(skinPrefs.manualIndex + step);
-      skinPrefs.mode = 'manual';
-      saveSkinPrefs();
-      updateSkinUi();
-      if (latestPayload) {
-        repaintSkin(latestPayload);
+      const len = SKINS.length;
+      let idx = skinPrefs.skinIndex;
+      for (let i = 0; i < len; i++) {
+        idx = ((idx + step) % len + len) % len;
+        if (isSkinUnlocked(SKINS[idx].id)) {
+          skinPrefs.skinIndex = idx;
+          saveSkinPrefs();
+          updateSkinUi();
+          repaintSkin();
+          ipcRenderer.invoke('game-interaction', 'skinChange').catch(() => {});
+          ipcRenderer.invoke('game-set-skin', getManualSkin().id).catch(() => {});
+          return;
+        }
       }
     }
 
-    function autoSkinFile(state, activeProvider) {
-      if (activeProvider === 'claude') {
-        return AUTO_SKIN_MAP.claude[state] || AUTO_SKIN_MAP.claude.CALM;
+    function repaintSkin() {
+      const skin = getManualSkin();
+      if (currentState === 'HIGH') {
+        catSprite.src = `./assets/cat/${skin.run}`;
+      } else if (currentState === 'USING') {
+        catSprite.src = `./assets/cat/${skin.walk}`;
+      } else {
+        catSprite.src = `./assets/cat/${skin.idle}`;
       }
-      if (activeProvider === 'codex') {
-        return AUTO_SKIN_MAP.codex[state] || AUTO_SKIN_MAP.codex.CALM;
-      }
-      return AUTO_SKIN_MAP.neutral[state] || AUTO_SKIN_MAP.neutral.CALM;
-    }
-
-    function resolveSkinFile(payload) {
-      if (skinPrefs.mode === 'manual') {
-        return getManualSkin().file;
-      }
-      const state = payload && payload.state ? payload.state : 'CALM';
-      const provider = payload && payload.activeProvider ? payload.activeProvider : 'neutral';
-      return autoSkinFile(state, provider);
-    }
-
-    function repaintSkin(payload) {
-      catSprite.src = `./assets/cat/${resolveSkinFile(payload)}`;
     }
 
     function stateClass(state) {
       if (state === 'HIGH') {
         return 'state-high';
       }
-      if (state === 'WATCH') {
-        return 'state-watch';
+      if (state === 'USING') {
+        return 'state-using';
       }
       if (state === 'ERROR') {
         return 'state-error';
@@ -743,16 +1398,19 @@
     }
 
     function applyWidgetState(state) {
-      widget.classList.remove('state-calm', 'state-watch', 'state-high', 'state-error', 'state-stale');
+      currentState = state;
+      widget.classList.remove('state-calm', 'state-using', 'state-high', 'state-error', 'state-stale');
       widget.classList.add(stateClass(state));
       stateTextEl.textContent = state || 'CALM';
 
-      catSprite.classList.remove('idle-bob', 'alert-bob');
-      if (state === 'HIGH' || state === 'WATCH') {
-        catSprite.classList.add('alert-bob');
-      } else {
-        catSprite.classList.add('idle-bob');
+      catSprite.classList.remove('idle-float', 'idle-sway');
+      if (state === 'ERROR' || state === 'STALE') {
+        catSprite.classList.add('idle-sway');
+      } else if (state === 'CALM') {
+        catSprite.classList.add('idle-float');
       }
+
+      repaintSkin();
     }
 
     function updateActiveRows(provider) {
@@ -769,8 +1427,8 @@
       }
 
       let taps = 2;
-      if (state === 'WATCH') {
-        taps = 4;
+      if (state === 'USING') {
+        taps = 3;
       }
       if (state === 'HIGH') {
         taps = 6;
@@ -801,18 +1459,17 @@
       tick();
     }
 
-    detailBtn.addEventListener('click', () => {
+    detailBtn.addEventListener('click', async () => {
       const next = !detailsVisible;
-      setDetailsVisible(next);
-      ipcRenderer.send('mini-toggle-details', next);
-    });
-
-    skinBtn.addEventListener('click', () => {
-      cycleSkin(1);
-    });
-
-    skinModeBtn.addEventListener('click', () => {
-      setSkinMode(skinPrefs.mode === 'manual' ? 'auto' : 'manual');
+      try {
+        const applied = await ipcRenderer.invoke('mini-toggle-details', next);
+        setDetailsVisible(Boolean(applied));
+      } catch {
+        ipcRenderer.send('mini-toggle-details', next);
+      }
+      if (next) {
+        ipcRenderer.invoke('game-interaction', 'drawerOpen').catch(() => {});
+      }
     });
 
     skinPrevBtn.addEventListener('click', () => {
@@ -823,16 +1480,42 @@
       cycleSkin(1);
     });
 
+    // ── 인라인 디테일 확장/축소 ──
+    let inlineClickLock = false;
+
+    claudeRow.addEventListener('click', () => {
+      if (inlineClickLock) return;
+      inlineClickLock = true;
+      setTimeout(() => { inlineClickLock = false; }, 250);
+      claudeRowExpanded = !claudeRowExpanded;
+      claudeRow.classList.toggle('row-expanded', claudeRowExpanded);
+      requestInlineResize();
+    });
+
+    codexRow.addEventListener('click', () => {
+      if (inlineClickLock) return;
+      inlineClickLock = true;
+      setTimeout(() => { inlineClickLock = false; }, 250);
+      codexRowExpanded = !codexRowExpanded;
+      codexRow.classList.toggle('row-expanded', codexRowExpanded);
+      requestInlineResize();
+    });
+
+    function requestInlineResize() {
+      const count = (claudeRowExpanded ? 1 : 0) + (codexRowExpanded ? 1 : 0);
+      ipcRenderer.send('mini-inline-expand', count);
+    }
+
     buildBlocks(claudeBlocks);
     buildBlocks(codexBlocks);
     updateSkinUi();
+    repaintSkin();
 
     ipcRenderer.on('usage-update', (_event, payload) => {
       latestPayload = payload || null;
       const state = payload && payload.state ? payload.state : 'CALM';
       const provider = payload && payload.activeProvider ? payload.activeProvider : 'neutral';
 
-      updatedEl.textContent = payload && payload.updatedAt ? payload.updatedAt : '--:--:--';
       setDetailsVisible(payload && typeof payload.detailsVisible === 'boolean' ? payload.detailsVisible : false);
 
       paintRow(claudeRow, claudeValue, claudeBlocks, payload ? payload.claude : null);
@@ -840,11 +1523,370 @@
       paintDetailLines(payload ? payload.claude : null, claudeDetail5hLine, claudeDetail7dLine);
       paintDetailLines(payload ? payload.codex : null, codexDetail5hLine, codexDetail7dLine);
 
+      // expand 상태 보존 (paintRow가 클래스를 리셋할 수 있으므로)
+      claudeRow.classList.toggle('row-expanded', claudeRowExpanded);
+      codexRow.classList.toggle('row-expanded', codexRowExpanded);
+
       applyWidgetState(state);
       updateActiveRows(provider);
-      repaintSkin(payload || {});
+      repaintSkin();
       runTap(state, payload || {});
+
+      // ── 게임 UI 업데이트 ──
+      if (payload && payload.game) {
+        updateGameUi(payload.game);
+        initBadgeGrid(payload.game);
+      }
+      if (payload && payload.gameEvents) {
+        handleGameEvents(payload.gameEvents);
+      }
     });
+
+    ipcRenderer.on('mini-details-state', (_event, applied) => {
+      setDetailsVisible(Boolean(applied));
+    });
+
+    // ── 고양이 쓰다듬기 ──
+    catSprite.addEventListener('click', async () => {
+      playSfx('click');
+      try {
+        const result = await ipcRenderer.invoke('game-pet-click');
+        if (result && result.summary) {
+          updateGameUi(result.summary);
+        }
+        if (result && result.events) {
+          handleGameEvents(result.events);
+        }
+      } catch {}
+    });
+
+    // ── 드로어 탭 시스템 ──
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => {
+          b.classList.remove('active');
+          b.setAttribute('aria-selected', 'false');
+        });
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
+        const tab = document.getElementById('tab-' + btn.dataset.tab);
+        if (tab) tab.classList.add('active');
+      });
+    });
+
+    // ── 게임 UI 업데이트 ──
+    function updateGameUi(game) {
+      if (!game) return;
+      latestGameState = game;
+
+      // 레거시 스킨 마이그레이션 (첫 실행 — 마이그레이션 전에 snap하면 안 됨)
+      if (!legacySkinMigrated) {
+        if (skinPrefs.skinIndex > 0) {
+          const currentSkin = getManualSkin();
+          ipcRenderer.invoke('game-migrate-skin', currentSkin.id).catch(() => {});
+        }
+        legacySkinMigrated = true;
+      } else {
+        // 마이그레이션 완료 후에만 잠긴 스킨 체크
+        snapToUnlockedSkin();
+      }
+
+      // LV 라벨 + 칭호 (접힌 상태 타이틀)
+      lvLabel.textContent = 'LV.' + (game.level || 1);
+      const titleNameEl = document.getElementById('titleName');
+      if (titleNameEl) titleNameEl.textContent = game.activeTitle || 'AI USAGE';
+
+      // XP 바 (접힌 상태)
+      const pct = Math.round((game.xpProgress || 0) * 100);
+      xpFill.style.width = pct + '%';
+
+      // 스탯 탭
+      statsLevel.textContent = 'LV.' + (game.level || 1);
+      statsXp.textContent = formatNum(game.currentXp || 0) + ' / ' + formatNum(game.nextLevelXp || 0);
+      if (xpFillBig) xpFillBig.style.width = pct + '%';
+      statsStreak.textContent = (game.currentStreak || 0) + ' DAYS';
+      statsBestStreak.textContent = (game.longestStreak || 0) + ' DAYS';
+      statsTodayXp.textContent = '+' + formatNum(game.todayXp || 0) + ' XP';
+      statsBadges.textContent = (game.achievementCount || 0) + ' / ' + (game.totalAchievements || 35);
+      statsRebirth.textContent = game.rebirthCount > 0 ? '★'.repeat(game.rebirthCount) : '-';
+
+      // 히스토리 차트
+      renderXpHistory(game.dailyHistory || []);
+
+      // 누적통계
+      const st = game.stats || {};
+      statsTotalBeats.textContent = formatNum(st.totalHeartbeats || 0);
+      statsTotalDetects.textContent = formatNum(st.totalUsageDetects || 0);
+      statsTotalClicks.textContent = formatNum(st.totalPetClicks || 0);
+      statsTotalDanger.textContent = (st.totalDangerMinutes || 0) + 'm';
+
+      // 퀘스트 탭
+      updateQuestUi(game);
+
+      // 사운드 상태 갱신
+      soundEnabled = game.soundEnabled !== false;
+      soundVolume = game.soundVolume || 0.3;
+      updateSoundBtn();
+
+      // 스킨 상태 갱신
+      updateSkinUi();
+    }
+
+    function formatNum(n) {
+      if (n >= 10000) return Math.round(n / 1000) + 'K';
+      if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+      return String(n);
+    }
+
+    function renderXpHistory(dailyHistory) {
+      const chart = document.getElementById('xpHistoryChart');
+      if (!chart) return;
+      const days = (dailyHistory || []).slice(-7);
+      if (days.length === 0) {
+        chart.innerHTML = '<span class="history-label" style="margin:auto">NO DATA</span>';
+        return;
+      }
+      const maxXp = Math.max(1, ...days.map(d => Number(d.xpEarned) || 0));
+      const barHeight = 22; // px
+      chart.innerHTML = '';
+      days.forEach(d => {
+        const xp = Number(d.xpEarned) || 0;
+        const h = Math.max(2, Math.round((xp / maxXp) * barHeight));
+        const col = document.createElement('div');
+        col.className = 'history-col';
+        const bar = document.createElement('div');
+        bar.className = 'history-bar';
+        bar.style.height = h + 'px';
+        bar.title = d.date + ': ' + xp + ' XP';
+        const lbl = document.createElement('div');
+        lbl.className = 'history-label';
+        lbl.textContent = (d.date || '').slice(-2); // DD
+        col.appendChild(bar);
+        col.appendChild(lbl);
+        chart.appendChild(col);
+      });
+    }
+
+    function updateQuestUi(game) {
+      // 일일 미션
+      const dm = game.dailyMissions;
+      if (!dm || !dm.missions || dm.missions.length === 0) {
+        questDailyHeader.textContent = 'DAILY';
+        questDailyList.innerHTML = '<div class="quest-item"><span style="color:var(--muted);font-size:8px">WAITING FOR DATA...</span></div>';
+      }
+      if (dm && dm.missions) {
+        const done = dm.missions.filter(m => m.completed).length;
+        questDailyHeader.textContent = 'DAILY (' + done + '/' + dm.missions.length + ')';
+        questDailyList.innerHTML = '';
+        dm.missions.forEach(m => {
+          const div = document.createElement('div');
+          div.className = 'quest-item' + (m.completed ? ' done' : '');
+          const check = m.completed ? '✓' : '○';
+          const prog = m.completed ? m.target + '/' + m.target : m.progress + '/' + m.target;
+          div.innerHTML = '<span class="quest-check">' + check + '</span><span>' + (m.id || '???').replace(/_/g, ' ').toUpperCase() + '</span><span>' + prog + '</span>';
+          questDailyList.appendChild(div);
+        });
+      }
+
+      // 주간 미션
+      const wm = game.weeklyMissions;
+      if (wm && wm.missions && wm.missions.length > 0) {
+        const done = wm.missions.filter(m => m.completed).length;
+        questWeeklyHeader.textContent = 'WEEKLY (' + done + '/' + wm.missions.length + ')';
+        questWeeklyList.innerHTML = '';
+        wm.missions.forEach(m => {
+          const div = document.createElement('div');
+          div.className = 'quest-item' + (m.completed ? ' done' : '');
+          const check = m.completed ? '✓' : '○';
+          const prog = m.completed ? m.target + '/' + m.target : m.progress + '/' + m.target;
+          div.innerHTML = '<span class="quest-check">' + check + '</span><span>' + (m.id || '???').replace(/_/g, ' ').toUpperCase() + '</span><span>' + prog + '</span>';
+          questWeeklyList.appendChild(div);
+        });
+      } else {
+        questWeeklyHeader.textContent = 'WEEKLY (LV5+)';
+        questWeeklyList.innerHTML = '';
+      }
+    }
+
+    // ── 토스트 큐 시스템 ──
+    function queueToast(html) {
+      toastQueue.push(html);
+      if (!toastActive) showNextToast();
+    }
+
+    function showNextToast() {
+      if (toastQueue.length === 0) {
+        toastActive = false;
+        return;
+      }
+      toastActive = true;
+      const html = toastQueue.shift();
+      achievementToast.classList.remove('hidden');
+      achievementToast.innerHTML = html;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          achievementToast.classList.add('show');
+        });
+      });
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toastTimer = null;
+        achievementToast.classList.remove('show');
+        setTimeout(() => {
+          achievementToast.classList.add('hidden');
+          showNextToast();
+        }, 350);
+      }, 3500);
+    }
+
+    // ── 게임 이벤트 처리 ──
+    function handleGameEvents(events) {
+      if (!events) return;
+
+      // 레벨업
+      if (events.levelUp) {
+        showLevelUpEffect(events.newLevel);
+        playSfx('levelup');
+      }
+
+      // 스킨 해금 토스트
+      if (events.newSkinUnlocks && events.newSkinUnlocks.length > 0) {
+        playSfx('fanfare');
+        events.newSkinUnlocks.forEach(skinId => {
+          const skin = SKINS.find(s => s.id === skinId);
+          if (skin) {
+            queueToast(
+              '<div class="toast-text">' +
+                '<span class="toast-title" style="color:#6de2ae">🔓 NEW SKIN</span>' +
+                '<span class="toast-sub"><span style="color:#fff">' + skin.name + '</span></span>' +
+              '</div>'
+            );
+          }
+        });
+        updateSkinUi();
+      }
+
+      // 업적 토스트 (아이콘 포함)
+      if (events.newAchievements && events.newAchievements.length > 0) {
+        playSfx('fanfare');
+        events.newAchievements.forEach(ach => {
+          const def = ACHIEVEMENT_MAP[ach.id];
+          const color = def ? def.color : (ach.rarity ? ach.rarity.color : '#fff');
+          const rarityLabel = ach.rarity ? ach.rarity.label : (def ? def.rarity : '');
+          queueToast(
+            '<img class="toast-icon" src="./assets/badges/' + ach.id + '.png" alt="">' +
+            '<div class="toast-text">' +
+              '<span class="toast-title" style="color:' + color + '">★ ' + ach.name + '</span>' +
+              '<span class="toast-sub">' +
+                '<span class="toast-rarity" style="color:' + color + '">' + rarityLabel + '</span>' +
+                '<span class="toast-xp">+' + (ach.xp || 0) + ' XP</span>' +
+              '</span>' +
+            '</div>'
+          );
+        });
+        catJump();
+        // 뱃지 그리드 갱신
+        if (latestGameState) initBadgeGrid(latestGameState);
+      }
+    }
+
+    function showLevelUpEffect(newLevel) {
+      lvLabel.textContent = 'LV.' + newLevel;
+      stateTextEl.textContent = 'LEVEL UP!';
+      stateTextEl.classList.add('level-up-anim');
+      setTimeout(() => {
+        stateTextEl.classList.remove('level-up-anim');
+        stateTextEl.textContent = currentState || 'CALM';
+      }, 3000);
+    }
+
+    function catJump() {
+      catSprite.classList.remove('cat-jump');
+      void catSprite.offsetWidth;
+      catSprite.classList.add('cat-jump');
+      setTimeout(() => catSprite.classList.remove('cat-jump'), 500);
+    }
+
+    // ── 뱃지 그리드 초기화 ──
+    const badgeDetailEl = document.getElementById('badgeDetail');
+    let badgeGridBuilt = false;
+
+    function initBadgeGrid(game) {
+      if (!game) return;
+      const earned = game.earnedAchievements || [];
+      const earnedSet = new Set(earned);
+      const count = game.achievementCount || earned.length;
+      const total = game.totalAchievements || ACHIEVEMENT_DEFS.length;
+
+      badgeHeader.textContent = 'BADGES (' + count + '/' + total + ')';
+
+      // 그리드 셀 최초 1회 빌드
+      if (!badgeGridBuilt) {
+        badgeGrid.innerHTML = '';
+        ACHIEVEMENT_DEFS.forEach(def => {
+          const cell = document.createElement('div');
+          cell.className = 'badge-cell';
+          cell.dataset.id = def.id;
+          cell.style.color = def.color;
+
+          const icon = document.createElement('img');
+          icon.className = 'badge-icon';
+          icon.src = './assets/badges/' + def.id + '.png';
+          icon.alt = def.name;
+          icon.draggable = false;
+
+          const name = document.createElement('div');
+          name.className = 'badge-name';
+
+          cell.appendChild(icon);
+          cell.appendChild(name);
+          badgeGrid.appendChild(cell);
+
+          // 툴팁 (호버)
+          cell.addEventListener('mouseenter', (e) => {
+            const d = ACHIEVEMENT_MAP[cell.dataset.id];
+            if (!d) return;
+            const isEarned = earnedSet.has(d.id) || cell.classList.contains('earned');
+            badgeDetailEl.innerHTML =
+              '<div class="badge-detail-name" style="color:' + d.color + '">' + d.name + '</div>' +
+              '<div class="badge-detail-desc">' + (d.hidden && !isEarned ? '???' : d.desc) + '</div>' +
+              '<div class="badge-detail-rarity" style="color:' + d.color + '">' + d.rarity + ' +' + d.xp + ' XP</div>';
+            // 위치 계산
+            const rect = cell.getBoundingClientRect();
+            const zoom = parseFloat(getComputedStyle(document.body).zoom) || 1;
+            const left = rect.left / zoom;
+            const top = rect.top / zoom;
+            badgeDetailEl.style.left = Math.min(left, window.innerWidth / zoom - 145) + 'px';
+            badgeDetailEl.style.top = (top - 40) + 'px';
+            badgeDetailEl.classList.add('show');
+          });
+          cell.addEventListener('mouseleave', () => {
+            badgeDetailEl.classList.remove('show');
+          });
+        });
+        badgeGridBuilt = true;
+      }
+
+      // earned/locked 상태 업데이트
+      const cells = badgeGrid.querySelectorAll('.badge-cell');
+      cells.forEach(cell => {
+        const id = cell.dataset.id;
+        const def = ACHIEVEMENT_MAP[id];
+        if (!def) return;
+        const isEarned = earnedSet.has(id);
+        const isSecret = def.hidden;
+
+        cell.classList.toggle('earned', isEarned);
+        cell.classList.toggle('locked', !isEarned);
+        cell.classList.toggle('secret', !!isSecret);
+
+        const nameEl = cell.querySelector('.badge-name');
+        if (nameEl) {
+          nameEl.textContent = (isSecret && !isEarned) ? '???' : def.name;
+        }
+      });
+    }
   </script>
 </body>
 </html>
