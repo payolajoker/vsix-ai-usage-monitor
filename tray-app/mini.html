@@ -1281,6 +1281,12 @@
       if (text.includes('CODEX CLI DATA MISSING')) {
         return 'CODEX DATA MISSING';
       }
+      if (text.includes('CODEX CLI DATA STALE')) {
+        return 'CODEX DATA STALE';
+      }
+      if (text.includes('CODEX RATE LIMIT UNKNOWN')) {
+        return 'CODEX LIMIT UNKNOWN';
+      }
       if (text.includes('TIMEOUT')) {
         return 'TIMEOUT';
       }
@@ -1481,7 +1487,6 @@
     });
 
     // ── 인라인 디테일 확장/축소 ──
-    let inlineClickLock = false;
 
     claudeRow.addEventListener('click', () => {
       if (inlineClickLock) return;

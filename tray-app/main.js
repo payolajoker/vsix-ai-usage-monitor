@@ -14,6 +14,9 @@ const DANGER_THRESHOLD = 85;
 const STALE_AFTER_MS = 3 * 60_000;
 const ACTIVE_PROVIDER_HOLD_MS = 7 * 60_000;
 const CODEX_APP_SERVER_TIMEOUT_MS = 7_000;
+const PROVIDER_FETCH_TIMEOUT_MS = 15_000;
+const SESSION_RATE_LIMIT_MAX_AGE_MS = 6 * 60 * 60_000;
+const SESSION_SCAN_FILE_LIMIT = 20;
 const CODEX_INIT_REQUEST_ID = 1;
 const CODEX_RATE_LIMITS_REQUEST_ID = 2;
 const CLAUDE_OAUTH_BETA = 'oauth-2025-04-20';
@@ -131,7 +134,6 @@ function createMiniWindow() {
 
   miniWin.setMenuBarVisibility(false);
   miniWin.setAlwaysOnTop(true, 'screen-saver');
-  miniWin.loadFile(path.join(__dirname, 'mini.html'));
 
   miniWin.webContents.on('did-finish-load', () => {
     miniReady = true;
@@ -156,6 +158,7 @@ function createMiniWindow() {
     console.error('Mini window renderer crashed:', details);
     recreateMiniWindow();
   });
+  miniWin.loadFile(path.join(__dirname, 'mini.html'));
 
   miniWin.on('moved', () => {
     if (!miniWin || miniWin.isDestroyed()) return;
@@ -249,7 +252,7 @@ function registerIpc() {
     applyDetailsVisibility(nextVisible);
   });
 
-  // ── 게임 IPC ──
+  // Game IPC
   ipcMain.handle('game-pet-click', () => {
     try {
       const game = gameStore.getData();
@@ -336,7 +339,7 @@ function registerIpc() {
     }
   });
 
-  // ── 인라인 디테일 확장/축소 ──
+  // Inline detail expand/collapse
   ipcMain.on('mini-inline-expand', (_event, expandedCount) => {
     const count = Math.max(0, Math.min(2, Number(expandedCount) || 0));
     if (count === inlineExpandedCount) return;
@@ -425,7 +428,7 @@ function ensureMiniWindowGeometry() {
     return;
   }
   if (collapseTimer) {
-    return; // Collapse animation in progress — defer resize
+    return; // Collapse animation in progress; defer resize
   }
 
   const bounds = miniWin.getBounds();
@@ -559,47 +562,48 @@ async function refreshNow() {
     return;
   }
 
-  let claude, codex;
-  try {
-    [claude, codex] = await Promise.all([getClaudeUsage(), getCodexUsage()]);
-  } catch (err) {
-    claude = { fiveHour: null, sevenDay: null, error: String(err.message || err) };
-    codex = { fiveHour: null, sevenDay: null, error: String(err.message || err) };
-  }
+  const [claudeResult, codexResult] = await Promise.allSettled([
+    withTimeout(getClaudeUsage(), PROVIDER_FETCH_TIMEOUT_MS, 'Claude usage request timed out'),
+    withTimeout(getCodexUsage(), PROVIDER_FETCH_TIMEOUT_MS, 'Codex usage request timed out'),
+  ]);
+  const claude = usageFromSettledResult('claude', claudeResult);
+  const codex = usageFromSettledResult('codex', codexResult);
 
   try {
     lastMiniMeta = buildMiniMeta(claude, codex, { updateHistory: true });
     lastUsage = { claude, codex };
 
-    // ── 게임 엔진 처리 ──
-    gameStore.checkRollover();
-    const game = gameStore.getData();
-    if (game) {
-      const c5 = getUsagePercent(claude, 'ratio');
-      const o5 = getUsagePercent(codex, 'percent');
-      const prevC5 = previousPercents.claude;
-      const prevO5 = previousPercents.codex;
-      const resetDetected =
-        (prevC5 != null && prevC5 >= 50 && c5 != null && c5 < 10) ||
-        (prevO5 != null && prevO5 >= 50 && o5 != null && o5 < 10);
+    try {
+      // Game loop failures should not block usage rendering.
+      gameStore.checkRollover();
+      const game = gameStore.getData();
+      if (game) {
+        const c5 = getUsagePercent(claude, 'ratio');
+        const o5 = getUsagePercent(codex, 'percent');
+        const prevC5 = previousPercents.claude;
+        const prevO5 = previousPercents.codex;
+        const resetDetected =
+          (prevC5 != null && prevC5 >= 50 && c5 != null && c5 < 10) ||
+          (prevO5 != null && prevO5 >= 50 && o5 != null && o5 < 10);
 
-      const gameEvents = gameEngine.processRefresh(game, {
-        claude5h: c5 || 0,
-        codex5h: o5 || 0,
-        claudeTrend: lastMiniMeta.trend.claude,
-        codexTrend: lastMiniMeta.trend.codex,
-        claudeError: Boolean(claude && claude.error),
-        codexError: Boolean(codex && codex.error),
-        state: lastMiniMeta.state,
-        timestamp: Date.now(),
-        resetDetected,
-      });
+        const gameEvents = gameEngine.processRefresh(game, {
+          claude5h: c5 || 0,
+          codex5h: o5 || 0,
+          claudeTrend: lastMiniMeta.trend.claude,
+          codexTrend: lastMiniMeta.trend.codex,
+          claudeError: Boolean(claude && claude.error),
+          codexError: Boolean(codex && codex.error),
+          state: lastMiniMeta.state,
+          timestamp: Date.now(),
+          resetDetected,
+        });
 
-      gameStore.markDirty();
-      gameStore.save();
-
-      // 게임 이벤트를 페이로드에 포함
-      lastMiniMeta._gameEvents = gameEvents;
+        gameStore.markDirty();
+        gameStore.save();
+        lastMiniMeta._gameEvents = gameEvents;
+      }
+    } catch (gameErr) {
+      console.error('[refreshNow/game]', gameErr.message || gameErr);
     }
 
     updateMiniWindow(claude, codex, lastMiniMeta);
@@ -608,6 +612,44 @@ async function refreshNow() {
   } catch (err) {
     console.error('[refreshNow]', err.message || err);
   }
+}
+
+function withTimeout(promise, timeoutMs, timeoutMessage) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+
+    Promise.resolve(promise)
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
+function usageErrorPayload(provider, error) {
+  return {
+    fiveHour: null,
+    sevenDay: null,
+    error: formatUsageErrorDetail(provider, String((error && error.message) || error || 'Unknown error')),
+    source: 'error',
+  };
+}
+
+function usageFromSettledResult(provider, settled) {
+  if (settled && settled.status === 'fulfilled') {
+    const usage = settled.value;
+    if (usage && typeof usage === 'object' && Object.prototype.hasOwnProperty.call(usage, 'fiveHour')) {
+      return usage;
+    }
+    return usageErrorPayload(provider, 'Invalid usage payload');
+  }
+  return usageErrorPayload(provider, settled ? settled.reason : 'Unknown error');
 }
 
 function updateMiniWindow(claude, codex, meta = makeDefaultMiniMeta()) {
@@ -659,6 +701,7 @@ function toMiniPayload(provider, usage, scale, trend = 0, changed = false, cross
       changed: false,
       warnCrossed: false,
       dangerCrossed: false,
+      source: usage.source || '',
     };
   }
 
@@ -680,6 +723,7 @@ function toMiniPayload(provider, usage, scale, trend = 0, changed = false, cross
     changed,
     warnCrossed: Boolean(crossings.warn),
     dangerCrossed: Boolean(crossings.danger),
+    source: usage.source || '',
   };
 }
 
@@ -1002,6 +1046,7 @@ async function getCodexUsage() {
       'codex',
       `app_server=${appServerUsage.error || ''}; sessions=${sessionUsage.error || ''}`
     ),
+    source: 'none',
   };
 }
 
@@ -1016,9 +1061,10 @@ async function getCodexUsageFromAppServer() {
     return {
       fiveHour: mapCodexWindow(snapshot.primary),
       sevenDay: snapshot.secondary ? mapCodexWindow(snapshot.secondary) : null,
+      source: 'app-server',
     };
   } catch (error) {
-    return { fiveHour: null, sevenDay: null, error: String(error.message || error) };
+    return { fiveHour: null, sevenDay: null, error: String(error.message || error), source: 'app-server' };
   }
 }
 
@@ -1172,16 +1218,80 @@ function sendJson(child, payload) {
   child.stdin.write(`${JSON.stringify(payload)}\n`);
 }
 
+function buildCodexSpawnEnv() {
+  const env = { ...process.env };
+  if (process.platform !== 'win32') {
+    return env;
+  }
+
+  const appData = env.APPDATA || '';
+  if (!appData) {
+    return env;
+  }
+
+  const npmBin = path.join(appData, 'npm');
+  const currentPath = String(env.Path || env.PATH || '');
+  const segments = currentPath.split(';').filter(Boolean);
+  const hasNpmBin = segments.some((segment) => segment.toLowerCase() === npmBin.toLowerCase());
+  if (!hasNpmBin) {
+    segments.unshift(npmBin);
+  }
+
+  const mergedPath = segments.join(';');
+  env.Path = mergedPath;
+  env.PATH = mergedPath;
+  return env;
+}
+
+function resolveCodexCommandWindows() {
+  const candidates = [];
+  const pushUnique = (candidate) => {
+    if (!candidate) {
+      return;
+    }
+    if (!candidates.includes(candidate)) {
+      candidates.push(candidate);
+    }
+  };
+
+  pushUnique(process.env.CODEX_CLI_PATH);
+  if (process.env.APPDATA) {
+    pushUnique(path.join(process.env.APPDATA, 'npm', 'codex.cmd'));
+    pushUnique(path.join(process.env.APPDATA, 'npm', 'codex.exe'));
+  }
+  if (HOME) {
+    pushUnique(path.join(HOME, 'AppData', 'Roaming', 'npm', 'codex.cmd'));
+    pushUnique(path.join(HOME, 'AppData', 'Roaming', 'npm', 'codex.exe'));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    } catch {
+      // ignore inaccessible paths
+    }
+  }
+
+  return 'codex';
+}
+
 function spawnCodexAppServerProcess() {
+  const env = buildCodexSpawnEnv();
   if (process.platform === 'win32') {
-    return spawn('cmd.exe', ['/d', '/s', '/c', 'codex app-server --listen stdio://'], {
+    const codexCommand = resolveCodexCommandWindows();
+    return spawn(codexCommand, ['app-server', '--listen', 'stdio://'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
+      env,
+      shell: true,
     });
   }
   return spawn('codex', ['app-server', '--listen', 'stdio://'], {
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
+    env,
   });
 }
 
@@ -1212,9 +1322,12 @@ function pickCodexSnapshot(result) {
 }
 
 function mapCodexWindow(window) {
+  const usedRaw = window ? window.usedPercent ?? window.used_percent ?? 0 : 0;
+  const resetsRaw = window ? window.resetsAt ?? window.resets_at ?? null : null;
+  const usedPercent = Number(usedRaw);
   return {
-    utilization: window.usedPercent || 0,
-    resetsAt: unixToIso(window.resetsAt),
+    utilization: Number.isFinite(usedPercent) ? usedPercent : 0,
+    resetsAt: unixToIso(resetsRaw),
   };
 }
 
@@ -1222,7 +1335,12 @@ function unixToIso(ts) {
   if (!ts) {
     return '';
   }
-  const ms = ts > 9_999_999_999 ? ts : ts * 1000;
+  const numericTs = Number(ts);
+  if (!Number.isFinite(numericTs)) {
+    const parsed = new Date(ts);
+    return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString();
+  }
+  const ms = numericTs > 9_999_999_999 ? numericTs : numericTs * 1000;
   return new Date(ms).toISOString();
 }
 
@@ -1231,7 +1349,7 @@ async function getCodexUsageFromSessions() {
     const sessionsDir = path.join(HOME, '.codex', 'sessions');
     const files = findJsonlFiles(sessionsDir);
     if (files.length === 0) {
-      return { fiveHour: null, sevenDay: null, error: 'No session files found' };
+      return { fiveHour: null, sevenDay: null, error: 'No session files found', source: 'sessions' };
     }
 
     const withMtime = files.map((f) => {
@@ -1243,8 +1361,8 @@ async function getCodexUsageFromSessions() {
     });
     withMtime.sort((a, b) => b.mtime - a.mtime);
 
-    let rateLimits = null;
-    for (const file of withMtime.slice(0, 5).map((e) => e.path)) {
+    let latest = null;
+    for (const file of withMtime.slice(0, SESSION_SCAN_FILE_LIMIT).map((e) => e.path)) {
       for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
         if (!line.trim()) {
           continue;
@@ -1252,34 +1370,55 @@ async function getCodexUsageFromSessions() {
         try {
           const data = JSON.parse(line);
           if (data.type === 'event_msg' && data.payload && data.payload.type === 'token_count' && data.payload.rate_limits) {
-            rateLimits = data.payload.rate_limits;
+            const rateLimits = data.payload.rate_limits;
+            const limitId = String((rateLimits.limit_id || rateLimits.limitId || '')).toLowerCase();
+            const eventMs = Date.parse(String(data.timestamp || ''));
+            if (!Number.isFinite(eventMs)) {
+              continue;
+            }
+
+            if (
+              !latest ||
+              eventMs > latest.eventMs ||
+              (eventMs === latest.eventMs && limitId === 'codex' && latest.limitId !== 'codex')
+            ) {
+              latest = { rateLimits, limitId, eventMs };
+            }
           }
         } catch {
           // skip malformed lines
         }
       }
-      if (rateLimits) {
-        break;
-      }
     }
 
-    if (!rateLimits) {
-      return { fiveHour: null, sevenDay: null, error: 'No rate limits data' };
+    if (!latest || !latest.rateLimits) {
+      return { fiveHour: null, sevenDay: null, error: 'No rate limits data', source: 'sessions' };
+    }
+    if (Date.now() - latest.eventMs > SESSION_RATE_LIMIT_MAX_AGE_MS) {
+      return { fiveHour: null, sevenDay: null, error: 'No recent rate limits data', source: 'sessions' };
+    }
+    if (latest.limitId !== 'codex') {
+      return { fiveHour: null, sevenDay: null, error: 'No codex primary limit in session data', source: 'sessions' };
     }
 
-    const toIso = (ts) => (ts ? new Date(ts * 1000).toISOString() : '');
+    const primary = latest.rateLimits.primary || {};
+    const secondary = latest.rateLimits.secondary || {};
+    const primaryUsed = Number(primary.used_percent ?? primary.usedPercent ?? 0);
+    const secondaryUsed = Number(secondary.used_percent ?? secondary.usedPercent ?? 0);
+
     return {
       fiveHour: {
-        utilization: (rateLimits.primary && rateLimits.primary.used_percent) || 0,
-        resetsAt: toIso(rateLimits.primary && rateLimits.primary.resets_at),
+        utilization: Number.isFinite(primaryUsed) ? primaryUsed : 0,
+        resetsAt: unixToIso(primary.resets_at ?? primary.resetsAt),
       },
       sevenDay: {
-        utilization: (rateLimits.secondary && rateLimits.secondary.used_percent) || 0,
-        resetsAt: toIso(rateLimits.secondary && rateLimits.secondary.resets_at),
+        utilization: Number.isFinite(secondaryUsed) ? secondaryUsed : 0,
+        resetsAt: unixToIso(secondary.resets_at ?? secondary.resetsAt),
       },
+      source: 'sessions',
     };
   } catch (error) {
-    return { fiveHour: null, sevenDay: null, error: String(error.message || error) };
+    return { fiveHour: null, sevenDay: null, error: String(error.message || error), source: 'sessions' };
   }
 }
 
@@ -1363,10 +1502,16 @@ function formatUsageErrorDetail(provider, errorText) {
   if (text.includes('no session files found') || text.includes('no rate limits data')) {
     return 'CODEX CLI DATA MISSING (run: codex once)';
   }
+  if (text.includes('no recent rate limits data')) {
+    return 'CODEX CLI DATA STALE (run: codex once)';
+  }
+  if (text.includes('no codex primary limit in session data')) {
+    return 'CODEX RATE LIMIT UNKNOWN';
+  }
   if (text.includes('timed out') || text.includes('timeout')) {
     return 'CODEX CLI TIMEOUT';
   }
-  if (text.includes('app-server')) {
+  if (text.includes('app-server') || text.includes('app_server=')) {
     return 'CODEX APP-SERVER UNAVAILABLE';
   }
   return 'CODEX USAGE UNAVAILABLE';
@@ -1435,3 +1580,4 @@ function httpsJsonRequest(method, hostname, urlPath, headers, body) {
     req.end();
   });
 }
+
