@@ -1,4 +1,4 @@
-# Project Analysis (Updated: 2026-03-02)
+# Project Analysis (Updated: 2026-03-04)
 
 This snapshot covers the current workspace state.
 
@@ -32,6 +32,7 @@ This snapshot covers the current workspace state.
 ### Extension
 
 - Core logic in `src/extension.ts`
+- Provider/data adapter split into `src/provider-adapter.ts`
 - 60-second polling timer
 - Status bar + tooltip rendering with threshold coloring
 
@@ -42,6 +43,7 @@ This snapshot covers the current workspace state.
   - refresh orchestration
   - notification/positioning logic
   - game IPC handlers
+- Provider/data adapter split into `tray-app/provider-adapter.js`
 - Renderer (`mini.html`):
   - compact/expanded HUD
   - tabs: `STAT`, `QUEST`, `BADGE`
@@ -50,6 +52,13 @@ This snapshot covers the current workspace state.
   - `game-config.js` (definitions)
   - `game-engine.js` (rules/progression)
   - `game-store.js` (persistent data/rollover)
+
+### Provider Contract (Intent)
+
+- Both apps expose app-local adapter entrypoints with the same interface intent:
+  - `getClaudeUsage()`
+  - `getCodexUsage()`
+- Implementations intentionally remain separate because the runtimes differ (VS Code extension host vs Electron main process).
 
 ## 5) Strengths
 

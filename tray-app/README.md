@@ -31,6 +31,7 @@ Windows tray companion app for monitoring Claude + Codex usage with a mini HUD a
 ## Key Files
 
 - `main.js` - Electron main process, window/tray lifecycle, IPC, refresh pipeline
+- `provider-adapter.js` - App-local Claude/Codex provider adapter for Electron runtime
 - `mini.html` - Mini widget UI/UX and renderer-side game interactions
 - `game-config.js` - XP curves, achievements, mission definitions, unlock tables
 - `game-engine.js` - Game logic (refresh processing, interaction handling, progression)

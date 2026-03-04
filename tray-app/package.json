@@ -24,6 +24,7 @@
     "productName": "AI Usage Tray",
     "files": [
       "main.js",
+      "provider-adapter.js",
       "game-config.js",
       "game-engine.js",
       "game-store.js",
