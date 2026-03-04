@@ -7,6 +7,7 @@ Monitor your **Claude** (Anthropic) and **Codex** (OpenAI) usage directly from V
 - VS Code Extension: `ai-usage-statusbar` (`0.2.7`)
 - Windows Tray App: `ai-usage-tray` (`0.3.6`)  
   Details: `tray-app/README.md`
+- Spec/Roadmap draft: `SPEC_PLAN.md`
 - Provider adapters are split per app runtime:
   - Extension: `src/provider-adapter.ts`
   - Tray: `tray-app/provider-adapter.js`

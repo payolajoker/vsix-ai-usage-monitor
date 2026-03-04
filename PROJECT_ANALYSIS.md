@@ -2,6 +2,8 @@
 
 This snapshot covers the current workspace state.
 
+Planning reference: `SPEC_PLAN.md`
+
 ## 1) Overview
 
 - Project: `AI Usage Monitor`
