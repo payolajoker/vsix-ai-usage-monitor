@@ -12,6 +12,9 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
+    "test": "node --test tests/ipc-contract.test.js tests/game-engine.test.js tests/game-store.test.js",
+    "test:ipc": "node --test tests/ipc-contract.test.js",
+    "test:game": "node --test tests/game-engine.test.js tests/game-store.test.js",
     "package:win": "electron-builder --win portable",
     "package:store": "electron-builder --win appx"
   },

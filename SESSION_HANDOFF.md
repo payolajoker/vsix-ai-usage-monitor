@@ -108,10 +108,25 @@ In `tray-app/main.js`:
   - `cd tray-app`
   - `npm install`
   - `npm run start`
+- Test:
+  - `cd tray-app`
+  - `npm run test`
+  - `npm run test:ipc`
+  - `npm run test:game`
 - Build EXE:
   - `npm run package:win`
 - Build APPX:
   - `npm run package:store`
+
+### Release Gate
+
+- From workspace root:
+  - `npm run release:check`
+- Includes:
+  - extension compile
+  - tray syntax checks
+  - tray IPC/game tests
+  - docs/version reference sync check
 
 ### Latest Tray Artifacts
 
@@ -133,5 +148,7 @@ In `tray-app/main.js`:
 1. Read this file first.
 2. For extension work, open `src/extension.ts`.
 3. For tray/game work, open `tray-app/main.js`, `tray-app/mini.html`, `tray-app/game-*.js`.
-4. Run `npm run start` inside `tray-app` for visual verification.
-5. Repackage with `npm run package:win` when shipping tray changes.
+4. Run `npm run test` inside `tray-app` before visual verification.
+5. Run `npm run start` inside `tray-app` for visual verification.
+6. Run `npm run release:check` at workspace root before packaging.
+7. Repackage with `npm run package:win` when shipping tray changes.

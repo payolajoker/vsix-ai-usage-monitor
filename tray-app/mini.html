@@ -178,6 +178,14 @@
       line-height: 1;
     }
 
+    .freshness-line {
+      font-size: 7px;
+      color: var(--muted);
+      letter-spacing: 0.1px;
+      text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.55);
+      margin-top: -4px;
+    }
+
     .title {
       font-size: 8px;
       color: #ece1ff;
@@ -256,7 +264,7 @@
     }
 
     .usage-row.row-expanded .inline-detail {
-      max-height: 40px;
+      max-height: 58px;
       opacity: 1;
       padding-top: 4px;
       border-top: 1px dashed rgba(255, 255, 255, 0.12);
@@ -812,6 +820,8 @@
         </div>
       </div>
 
+      <div id="freshnessLine" class="freshness-line">LAST OK -- | UPD --</div>
+
       <div id="claudeRow" class="usage-row claude">
         <div class="head">
           <span class="name">CLAUDE</span>
@@ -826,6 +836,10 @@
           <div class="detail-row">
             <span class="detail-period">7D</span>
             <span id="claudeDetail7dLine" class="detail-value">-- / --</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-period">SRC</span>
+            <span id="claudeSourceLine" class="detail-value">--</span>
           </div>
         </div>
       </div>
@@ -844,6 +858,10 @@
           <div class="detail-row">
             <span class="detail-period">7D</span>
             <span id="codexDetail7dLine" class="detail-value">-- / --</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-period">SRC</span>
+            <span id="codexSourceLine" class="detail-value">--</span>
           </div>
         </div>
       </div>
@@ -987,8 +1005,11 @@
 
     const claudeDetail5hLine = document.getElementById('claudeDetail5hLine');
     const claudeDetail7dLine = document.getElementById('claudeDetail7dLine');
+    const claudeSourceLine = document.getElementById('claudeSourceLine');
     const codexDetail5hLine = document.getElementById('codexDetail5hLine');
     const codexDetail7dLine = document.getElementById('codexDetail7dLine');
+    const codexSourceLine = document.getElementById('codexSourceLine');
+    const freshnessLine = document.getElementById('freshnessLine');
 
     const SKIN_PREFS_KEY = 'ai_usage_tray_skin_prefs_v2';
     const SKINS = [
@@ -1232,6 +1253,32 @@
       return value && value.length ? value : '--';
     }
 
+    function formatSource(value) {
+      const source = String(value || '').toLowerCase();
+      if (!source) return '--';
+      if (source === 'app-server') return 'APP-SERVER';
+      if (source === 'sessions') return 'SESSIONS';
+      if (source === 'error') return 'ERROR';
+      if (source === 'none') return 'NONE';
+      return source.toUpperCase();
+    }
+
+    function formatStaleReason(reason) {
+      if (reason === 'NO_SUCCESS_YET') return 'NO SUCCESS YET';
+      if (reason === 'LAST_SUCCESS_EXPIRED') return 'LAST SUCCESS EXPIRED';
+      if (reason === 'PROVIDER_ERROR') return 'PROVIDER ERROR';
+      return 'STALE';
+    }
+
+    function formatFreshness(payload) {
+      const updated = payload && payload.updatedAt ? payload.updatedAt : '--';
+      const lastOk = payload && payload.lastSuccessAt ? payload.lastSuccessAt : '--';
+      if (payload && payload.stale) {
+        return `LAST OK ${lastOk} | UPD ${updated} | ${formatStaleReason(payload.staleReason || '')}`;
+      }
+      return `LAST OK ${lastOk} | UPD ${updated}`;
+    }
+
     function setDetailsVisible(nextVisible) {
       detailsVisible = Boolean(nextVisible);
       widget.classList.toggle('expanded', detailsVisible);
@@ -1310,14 +1357,20 @@
       renderPixels(blocksTarget, Number(entry.progress != null ? entry.progress : entry.used5h));
     }
 
-    function paintDetailLines(entry, line5h, line7d) {
+    function paintDetailLines(entry, line5h, line7d, lineSource) {
       if (!entry || entry.error || entry.used5h == null) {
         line5h.textContent = entry && entry.error ? entry.error : 'NO DATA';
         line7d.textContent = '-- / --';
+        if (lineSource) {
+          lineSource.textContent = formatSource(entry && entry.source);
+        }
         return;
       }
       line5h.textContent = `${formatPercent(entry.used5h)} / ${formatReset(entry.reset5h)}`;
       line7d.textContent = `${formatPercent(entry.used7d)} / ${formatReset(entry.reset7d)}`;
+      if (lineSource) {
+        lineSource.textContent = formatSource(entry.source);
+      }
     }
 
     function updateSkinUi() {
@@ -1525,8 +1578,11 @@
 
       paintRow(claudeRow, claudeValue, claudeBlocks, payload ? payload.claude : null);
       paintRow(codexRow, codexValue, codexBlocks, payload ? payload.codex : null);
-      paintDetailLines(payload ? payload.claude : null, claudeDetail5hLine, claudeDetail7dLine);
-      paintDetailLines(payload ? payload.codex : null, codexDetail5hLine, codexDetail7dLine);
+      paintDetailLines(payload ? payload.claude : null, claudeDetail5hLine, claudeDetail7dLine, claudeSourceLine);
+      paintDetailLines(payload ? payload.codex : null, codexDetail5hLine, codexDetail7dLine, codexSourceLine);
+      if (freshnessLine) {
+        freshnessLine.textContent = formatFreshness(payload || {});
+      }
 
       // expand 상태 보존 (paintRow가 클래스를 리셋할 수 있으므로)
       claudeRow.classList.toggle('row-expanded', claudeRowExpanded);

@@ -28,6 +28,29 @@ Windows tray companion app for monitoring Claude + Codex usage with a mini HUD a
   - Codex `app-server` primary + session fallback
 - 60-second auto refresh
 
+## Test
+
+Run all tray tests:
+
+```bash
+cd tray-app
+npm run test
+```
+
+Run IPC contract smoke tests only:
+
+```bash
+cd tray-app
+npm run test:ipc
+```
+
+Run game logic unit tests only:
+
+```bash
+cd tray-app
+npm run test:game
+```
+
 ## Key Files
 
 - `main.js` - Electron main process, window/tray lifecycle, IPC, refresh pipeline

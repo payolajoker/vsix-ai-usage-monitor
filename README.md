@@ -59,6 +59,26 @@ Use the button to run a one-shot `codex app-server` check and inspect raw JSON.
 - XP/level/rebirth + achievements + quests
 - Optional SFX and persistent game state
 
+## Quality Checks
+
+- Tray IPC smoke tests:
+
+```bash
+npm --prefix tray-app run test:ipc
+```
+
+- Tray game unit tests:
+
+```bash
+npm --prefix tray-app run test:game
+```
+
+- Full release gate (compile + syntax + tests + docs/version sync):
+
+```bash
+npm run release:check
+```
+
 ## License
 
 MIT. See `LICENSE`.

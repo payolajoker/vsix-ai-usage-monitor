@@ -72,11 +72,11 @@ Planning reference: `SPEC_PLAN.md`
 ## 6) Risks / Gaps
 
 1. Tray packaging can take long in automation contexts; command timeout handling needs clear CI policy.
-2. Automated tests are still limited (mainly compile/syntax/smoke + visual evidence artifacts).
-3. Extension/tray release/versioning workflow is still largely manual.
+2. Automated quality checks now exist (IPC smoke + game unit + release gate), but renderer-level end-to-end UI automation still needs broader coverage.
+3. Extension/tray release/versioning workflow is improved with release gate scripting, but CI integration policy is still open.
 
 ## 7) Recommended Next Steps
 
-1. Add smoke tests for tray IPC contracts and renderer event handling.
-2. Add scripted release checklist (compile, package, artifact verification, docs sync).
-3. Add lightweight unit tests for game progression and mission rollover logic.
+1. Add CI wiring for `npm run release:check` and Windows packaging validation strategy.
+2. Expand renderer-level UI regression tests (state transitions, stale/source rendering, tab interactions).
+3. Add support diagnostics payload UX (copy-safe summary without sensitive data).

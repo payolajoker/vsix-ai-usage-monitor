@@ -18,7 +18,7 @@ const APP_USER_MODEL_ID = 'AI USAGE';
 const MINI_WIDTH = 560;
 const MINI_HEIGHT = 238;
 const MINI_HEIGHT_DETAILS = 500;
-const INLINE_ROW_HEIGHT = 38;
+const INLINE_ROW_HEIGHT = 56;
 const SNAP_THRESHOLD = 20;
 const SNAP_MARGIN = 10;
 const WINDOW_POSITION_SAVE_DEBOUNCE_MS = 180;
@@ -153,9 +153,8 @@ function createMiniWindow() {
   miniWin.on('moved', () => {
     if (!miniWin || miniWin.isDestroyed()) return;
     const bounds = miniWin.getBounds();
-    const display = screen.getPrimaryDisplay();
-    if (!display) return;
-    const area = display.workArea;
+    const area = getWorkAreaForBounds(bounds);
+    if (!area) return;
     let { x, y } = bounds;
     let snapped = false;
 
@@ -404,13 +403,58 @@ function setMiniDetailsVisible(nextVisible) {
 }
 
 function clampToWorkArea(x, y, w, h) {
-  const display = screen.getPrimaryDisplay();
-  if (!display) return { x, y };
-  const area = display.workArea;
+  const area = getWorkAreaForPoint(x, y);
+  if (!area) return { x, y };
   return {
     x: Math.max(area.x, Math.min(x, area.x + area.width - w)),
     y: Math.max(area.y, Math.min(y, area.y + area.height - h)),
   };
+}
+
+function getWorkAreaForBounds(bounds) {
+  if (!bounds) {
+    const fallback = screen.getPrimaryDisplay();
+    return fallback ? fallback.workArea : null;
+  }
+
+  const probe = {
+    x: Math.round(bounds.x || 0),
+    y: Math.round(bounds.y || 0),
+    width: Math.max(1, Math.round(bounds.width || MINI_WIDTH)),
+    height: Math.max(1, Math.round(bounds.height || getMiniHeight())),
+  };
+
+  const matched = screen.getDisplayMatching(probe);
+  if (matched && matched.workArea) {
+    return matched.workArea;
+  }
+
+  const nearest = screen.getDisplayNearestPoint({ x: probe.x, y: probe.y });
+  if (nearest && nearest.workArea) {
+    return nearest.workArea;
+  }
+
+  const fallback = screen.getPrimaryDisplay();
+  return fallback ? fallback.workArea : null;
+}
+
+function getWorkAreaForPoint(x, y) {
+  const all = screen.getAllDisplays();
+  const hit = all.find((display) => {
+    const area = display.workArea;
+    return x >= area.x && x <= area.x + area.width && y >= area.y && y <= area.y + area.height;
+  });
+  if (hit && hit.workArea) {
+    return hit.workArea;
+  }
+
+  const nearest = screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) });
+  if (nearest && nearest.workArea) {
+    return nearest.workArea;
+  }
+
+  const fallback = screen.getPrimaryDisplay();
+  return fallback ? fallback.workArea : null;
 }
 
 function ensureMiniWindowGeometry() {
@@ -423,9 +467,8 @@ function ensureMiniWindowGeometry() {
 
   const bounds = miniWin.getBounds();
   const targetHeight = getMiniHeight();
-  const display = screen.getPrimaryDisplay();
-  if (!display) return;
-  const area = display.workArea;
+  const area = getWorkAreaForBounds(bounds);
+  if (!area) return;
 
   if (bounds.width !== MINI_WIDTH || bounds.height !== targetHeight) {
     const isTopAnchored = (bounds.y - area.y) <= SNAP_THRESHOLD;
@@ -478,17 +521,14 @@ function restoreMiniWindowPosition() {
   if (!saved || !Number.isFinite(saved.x) || !Number.isFinite(saved.y)) {
     return false;
   }
-  const display = screen.getPrimaryDisplay();
-  if (!display) return false;
-  const area = display.workArea;
+  const area = getWorkAreaForPoint(saved.x, saved.y);
+  if (!area) return false;
   const targetHeight = getMiniHeight();
-  if (saved.x < area.x || saved.x > area.x + area.width - MINI_WIDTH) {
-    return false;
-  }
-  if (saved.y < area.y || saved.y > area.y + area.height - targetHeight) {
-    return false;
-  }
-  miniWin.setPosition(Math.round(saved.x), Math.round(saved.y), false);
+  const clamped = {
+    x: Math.max(area.x, Math.min(saved.x, area.x + area.width - MINI_WIDTH)),
+    y: Math.max(area.y, Math.min(saved.y, area.y + area.height - targetHeight)),
+  };
+  miniWin.setPosition(Math.round(clamped.x), Math.round(clamped.y), false);
   return true;
 }
 
@@ -512,10 +552,9 @@ function positionMiniWindow() {
   }
 
   try {
-    const display = screen.getPrimaryDisplay();
-    if (!display) return;
-    const area = display.workArea;
     const bounds = miniWin.getBounds();
+    const area = getWorkAreaForBounds(bounds);
+    if (!area) return;
     const currentHeight = bounds && bounds.height ? bounds.height : getMiniHeight();
     const x = Math.round(area.x + area.width - MINI_WIDTH - 10);
     const y = Math.round(area.y + area.height - currentHeight - 10);
@@ -656,10 +695,12 @@ function updateMiniWindow(claude, codex, meta = makeDefaultMiniMeta()) {
     claude: toMiniPayload('claude', claude, 'ratio', meta.trend.claude, meta.changed.claude, meta.crossings.claude),
     codex: toMiniPayload('codex', codex, 'percent', meta.trend.codex, meta.changed.codex, meta.crossings.codex),
     updatedAt: new Date().toLocaleTimeString(),
+    lastSuccessAt: lastSuccessAt ? new Date(lastSuccessAt).toLocaleTimeString() : '',
     focusMode: meta.focusMode,
     activeProvider: meta.activeProvider,
     state: meta.state,
     stale: meta.stale,
+    staleReason: meta.staleReason || '',
     detailsVisible: miniDetailsVisible,
     game: gameSummary,
     gameEvents: meta._gameEvents || null,
@@ -723,6 +764,7 @@ function makeDefaultMiniMeta() {
     activeProvider: 'neutral',
     state: 'CALM',
     stale: true,
+    staleReason: 'NO_SUCCESS_YET',
     trend: { claude: 0, codex: 0 },
     changed: { claude: false, codex: false },
     crossings: {
@@ -819,6 +861,13 @@ function buildMiniMeta(claude, codex, options = { updateHistory: true }) {
 
   const stale = !lastSuccessAt || now - lastSuccessAt >= STALE_AFTER_MS;
   const activeProvider = inferActiveProvider(current, trend, now);
+  const staleReason = hasError
+    ? 'PROVIDER_ERROR'
+    : !lastSuccessAt
+      ? 'NO_SUCCESS_YET'
+      : stale
+        ? 'LAST_SUCCESS_EXPIRED'
+        : '';
 
   let state = 'CALM';
   if (hasError) {
@@ -843,6 +892,7 @@ function buildMiniMeta(claude, codex, options = { updateHistory: true }) {
     activeProvider,
     state,
     stale,
+    staleReason,
     trend,
     changed,
     crossings,
