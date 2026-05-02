@@ -54,3 +54,15 @@ npm run compile
 npm run test:tray
 npm run release:check
 ```
+
+## 6) Enable/Disable Providers via Env
+
+Set `AI_USAGE_PROVIDERS` to control which providers are queried and shown:
+
+- `AI_USAGE_PROVIDERS=codex`
+- `AI_USAGE_PROVIDERS=claude`
+- `AI_USAGE_PROVIDERS=claude,codex`
+- `AI_USAGE_PROVIDERS=none`
+
+For debug sessions, you can also place this in `.vscode/launch.json` under a
+profile `env` block.

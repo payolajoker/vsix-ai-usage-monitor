@@ -4,8 +4,25 @@ import { AgentUsage, getClaudeUsage, getCodexUsage } from './provider-adapter';
 let usageBar: vscode.StatusBarItem;
 let timer: NodeJS.Timeout;
 
+type ProviderKey = 'claude' | 'codex';
+type UsageScale = 'ratio' | 'percent';
+
+interface ProviderViewModel {
+  key: ProviderKey;
+  name: string;
+  emoji: string;
+  label: string;
+  scale: UsageScale;
+  data: AgentUsage;
+}
+
+const DEFAULT_PROVIDERS: ProviderKey[] = ['claude', 'codex'];
+
 export function activate(context: vscode.ExtensionContext) {
-  usageBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 1000);
+  usageBar = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    1000,
+  );
 
   usageBar.show();
 
@@ -17,39 +34,129 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 async function doRefresh() {
-  const [claude, codex] = await Promise.all([getClaudeUsage(), getCodexUsage()]);
-  renderCombinedBar(usageBar, claude, codex);
+  const enabledProviders = getEnabledProviders();
+  if (enabledProviders.length === 0) {
+    renderNoProvidersBar(usageBar);
+    return;
+  }
+
+  const providers = await Promise.all(
+    enabledProviders.map(async (key): Promise<ProviderViewModel> => {
+      if (key === 'claude') {
+        return {
+          key,
+          name: 'Claude',
+          emoji: '🟠',
+          label: 'C',
+          scale: 'ratio',
+          data: await getClaudeUsage(),
+        };
+      }
+
+      return {
+        key,
+        name: 'Codex',
+        emoji: '🔵',
+        label: 'O',
+        scale: 'percent',
+        data: await getCodexUsage(),
+      };
+    }),
+  );
+
+  renderCombinedBar(usageBar, providers);
+}
+
+function getEnabledProviders(): ProviderKey[] {
+  const raw = process.env.AI_USAGE_PROVIDERS;
+  if (!raw || !raw.trim()) {
+    return [...DEFAULT_PROVIDERS];
+  }
+
+  const tokens = raw
+    .split(/[\s,]+/)
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (tokens.includes('none') || tokens.includes('off')) {
+    return [];
+  }
+
+  const enabled: ProviderKey[] = [];
+  for (const token of tokens) {
+    const normalized = normalizeProviderToken(token);
+    if (normalized && !enabled.includes(normalized)) {
+      enabled.push(normalized);
+    }
+  }
+
+  return enabled.length > 0 ? enabled : [...DEFAULT_PROVIDERS];
+}
+
+function normalizeProviderToken(token: string): ProviderKey | null {
+  if (token === 'claude' || token === 'anthropic' || token === 'c') {
+    return 'claude';
+  }
+  if (token === 'codex' || token === 'openai' || token === 'o') {
+    return 'codex';
+  }
+  return null;
 }
 
 function toPercent(utilization: number, scale: 'ratio' | 'percent'): number {
-  const raw = scale === 'ratio' && utilization <= 1 ? utilization * 100 : utilization;
+  const raw =
+    scale === 'ratio' && utilization <= 1 ? utilization * 100 : utilization;
   return Math.max(0, Math.min(100, Math.round(raw)));
 }
 
-function renderCombinedBar(bar: vscode.StatusBarItem, claude: AgentUsage, codex: AgentUsage) {
-  const claudeSegment = formatSegment('🟠', 'C', claude, 'ratio');
-  const codexSegment = formatSegment('🔵', 'O', codex, 'percent');
-  bar.text = `${claudeSegment}  |  ${codexSegment}`;
+function renderNoProvidersBar(bar: vscode.StatusBarItem) {
+  bar.text = 'AI usage disabled';
+  bar.color = '#6e7681';
+  bar.tooltip =
+    'No providers are enabled. Set AI_USAGE_PROVIDERS to codex, claude, or both (comma/space separated).';
+}
 
-  const claude5h = getFiveHourPercent(claude, 'ratio');
-  const codex5h = getFiveHourPercent(codex, 'percent');
-  const usable = [claude5h, codex5h].filter((v): v is number => typeof v === 'number');
+function renderCombinedBar(
+  bar: vscode.StatusBarItem,
+  providers: ProviderViewModel[],
+) {
+  bar.text = providers
+    .map((provider) =>
+      formatSegment(
+        provider.emoji,
+        provider.label,
+        provider.data,
+        provider.scale,
+      ),
+    )
+    .join('  |  ');
+
+  const usable = providers
+    .map((provider) => getFiveHourPercent(provider.data, provider.scale))
+    .filter((v): v is number => typeof v === 'number');
   if (usable.length === 0) {
     bar.color = '#6e7681';
   } else {
     const maxUsed = Math.max(...usable);
-    bar.color = maxUsed >= 85 ? '#f85149' : maxUsed >= 70 ? '#d29922' : undefined;
+    bar.color =
+      maxUsed >= 85 ? '#f85149' : maxUsed >= 70 ? '#d29922' : undefined;
   }
 
   const tip = new vscode.MarkdownString();
   tip.isTrusted = true;
-  appendUsageTooltip(tip, 'Claude', claude, 'ratio');
-  tip.appendMarkdown('\n');
-  appendUsageTooltip(tip, 'Codex', codex, 'percent');
+  providers.forEach((provider, index) => {
+    if (index > 0) {
+      tip.appendMarkdown('\n');
+    }
+    appendUsageTooltip(tip, provider.name, provider.data, provider.scale);
+  });
   bar.tooltip = tip;
 }
 
-function getFiveHourPercent(data: AgentUsage, scale: 'ratio' | 'percent'): number | null {
+function getFiveHourPercent(
+  data: AgentUsage,
+  scale: UsageScale,
+): number | null {
   if (data.error || !data.fiveHour) {
     return null;
   }
@@ -60,7 +167,7 @@ function formatSegment(
   emoji: string,
   label: string,
   data: AgentUsage,
-  scale: 'ratio' | 'percent'
+  scale: UsageScale,
 ): string {
   if (data.error || !data.fiveHour) {
     return `${emoji} ${label} --`;
@@ -74,7 +181,7 @@ function appendUsageTooltip(
   tip: vscode.MarkdownString,
   name: string,
   data: AgentUsage,
-  scale: 'ratio' | 'percent'
+  scale: UsageScale,
 ) {
   tip.appendMarkdown(`**${name}**\n\n`);
   if (data.error || !data.fiveHour) {
@@ -85,11 +192,15 @@ function appendUsageTooltip(
   const used5h = toPercent(data.fiveHour.utilization, scale);
   const reset5h = formatReset(data.fiveHour.resetsAt);
   tip.appendMarkdown(`| | Used | Resets In |\n|---|---|---|\n`);
-  tip.appendMarkdown(`| 5-Hour Session | **${used5h}%** | ${reset5h || '--'} |\n`);
+  tip.appendMarkdown(
+    `| 5-Hour Session | **${used5h}%** | ${reset5h || '--'} |\n`,
+  );
   if (data.sevenDay) {
     const used7d = toPercent(data.sevenDay.utilization, scale);
     const reset7d = formatReset(data.sevenDay.resetsAt);
-    tip.appendMarkdown(`| 7-Day Weekly | **${used7d}%** | ${reset7d || '--'} |\n`);
+    tip.appendMarkdown(
+      `| 7-Day Weekly | **${used7d}%** | ${reset7d || '--'} |\n`,
+    );
   }
 }
 

@@ -33,6 +33,20 @@ VS Code, and optionally through the companion Windows tray app.
 
 Both tools must be installed and used at least once for usage data to appear.
 
+## Provider Toggle via Env
+
+You can choose which providers are active using `AI_USAGE_PROVIDERS`.
+
+- Default (unset): `claude,codex`
+- Codex only: `AI_USAGE_PROVIDERS=codex`
+- Claude only: `AI_USAGE_PROVIDERS=claude`
+- Disable all: `AI_USAGE_PROVIDERS=none`
+
+Accepted tokens are comma or space separated and support aliases:
+
+- Claude: `claude`, `anthropic`, `c`
+- Codex: `codex`, `openai`, `o`
+
 ## Status Bar Example
 
 ```
