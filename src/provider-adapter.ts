@@ -9,13 +9,18 @@ import * as readline from 'readline';
 
 const HOME = os.homedir();
 const CODEX_APP_SERVER_TIMEOUT_MS = 7_000;
+const COPILOT_APP_SERVER_TIMEOUT_MS = 7_000;
 const SESSION_SCAN_FILE_LIMIT = 5;
 const CODEX_INIT_REQUEST_ID = 1;
 const CODEX_RATE_LIMITS_REQUEST_ID = 2;
+const COPILOT_INIT_REQUEST_ID = 11;
+const COPILOT_RATE_LIMITS_REQUEST_ID = 12;
 const CLAUDE_OAUTH_BETA = 'oauth-2025-04-20';
-const CLAUDE_OAUTH_SCOPE = 'user:profile user:inference user:sessions:claude_code user:mcp_servers';
+const CLAUDE_OAUTH_SCOPE =
+  'user:profile user:inference user:sessions:claude_code user:mcp_servers';
 const CLAUDE_OAUTH_CLIENT_ID =
-  process.env.CLAUDE_CODE_OAUTH_CLIENT_ID || '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
+  process.env.CLAUDE_CODE_OAUTH_CLIENT_ID ||
+  '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 
 export interface UsageResult {
   utilization: number;
@@ -94,7 +99,9 @@ export async function getClaudeUsage(): Promise<AgentUsage> {
 }
 
 function readClaudeCredentials(credPath: string): ClaudeCredentialsFile {
-  const cred = JSON.parse(fs.readFileSync(credPath, 'utf8')) as ClaudeCredentialsFile;
+  const cred = JSON.parse(
+    fs.readFileSync(credPath, 'utf8'),
+  ) as ClaudeCredentialsFile;
   if (!cred?.claudeAiOauth) {
     throw new Error('Missing claudeAiOauth in credentials');
   }
@@ -104,10 +111,16 @@ function readClaudeCredentials(credPath: string): ClaudeCredentialsFile {
 function mapClaudeUsage(data: any): AgentUsage {
   return {
     fiveHour: data.five_hour
-      ? { utilization: data.five_hour.utilization ?? 0, resetsAt: data.five_hour.resets_at ?? '' }
+      ? {
+          utilization: data.five_hour.utilization ?? 0,
+          resetsAt: data.five_hour.resets_at ?? '',
+        }
       : null,
     sevenDay: data.seven_day
-      ? { utilization: data.seven_day.utilization ?? 0, resetsAt: data.seven_day.resets_at ?? '' }
+      ? {
+          utilization: data.seven_day.utilization ?? 0,
+          resetsAt: data.seven_day.resets_at ?? '',
+        }
       : null,
   };
 }
@@ -130,7 +143,10 @@ function isClaudeTokenExpiredError(error: unknown): boolean {
       return false;
     }
     const bodyText = (error.responseBody || '').toLowerCase();
-    return bodyText.includes('token_expired') || bodyText.includes('token has expired');
+    return (
+      bodyText.includes('token_expired') ||
+      bodyText.includes('token has expired')
+    );
   }
 
   return false;
@@ -138,7 +154,7 @@ function isClaudeTokenExpiredError(error: unknown): boolean {
 
 async function refreshClaudeAccessToken(
   credPath: string,
-  cred: ClaudeCredentialsFile
+  cred: ClaudeCredentialsFile,
 ): Promise<ClaudeOauthCredentials> {
   const oauth = cred.claudeAiOauth ?? {};
   const refreshToken = oauth.refreshToken;
@@ -146,12 +162,17 @@ async function refreshClaudeAccessToken(
     throw new Error('Claude refresh token missing. Run `claude setup-token`.');
   }
 
-  const refreshed = await httpsPost('api.anthropic.com', '/v1/oauth/token', {}, {
-    grant_type: 'refresh_token',
-    refresh_token: refreshToken,
-    client_id: CLAUDE_OAUTH_CLIENT_ID,
-    scope: CLAUDE_OAUTH_SCOPE,
-  });
+  const refreshed = await httpsPost(
+    'api.anthropic.com',
+    '/v1/oauth/token',
+    {},
+    {
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: CLAUDE_OAUTH_CLIENT_ID,
+      scope: CLAUDE_OAUTH_SCOPE,
+    },
+  );
 
   const accessToken = refreshed?.access_token;
   if (!accessToken || typeof accessToken !== 'string') {
@@ -200,17 +221,37 @@ export async function getCodexUsage(): Promise<AgentUsage> {
     sevenDay: null,
     error: formatUsageErrorDetail(
       'codex',
-      `app_server=${appServerUsage.error ?? ''}; sessions=${sessionUsage.error ?? ''}`
+      `app_server=${appServerUsage.error ?? ''}; sessions=${sessionUsage.error ?? ''}`,
     ),
   };
 }
 
-async function getCodexUsageFromAppServer(): Promise<AgentUsage> {
+export async function getCopilotUsage(): Promise<AgentUsage> {
+  const appServerUsage = await getCopilotUsageFromAppServer();
+  if (!appServerUsage.error) {
+    return appServerUsage;
+  }
+
+  return {
+    fiveHour: null,
+    sevenDay: null,
+    error: formatUsageErrorDetail(
+      'copilot',
+      `app_server=${appServerUsage.error ?? ''}`,
+    ),
+  };
+}
+
+async function getCopilotUsageFromAppServer(): Promise<AgentUsage> {
   try {
-    const result = await readCodexRateLimitsFromAppServer();
-    const snapshot = pickCodexSnapshot(result);
+    const result = await readCopilotRateLimitsFromAppServer();
+    const snapshot = pickRateLimitSnapshot(result, ['copilot', 'github']);
     if (!snapshot?.primary) {
-      return { fiveHour: null, sevenDay: null, error: 'No primary rate limit window from app server' };
+      return {
+        fiveHour: null,
+        sevenDay: null,
+        error: 'No primary rate limit window from app server',
+      };
     }
 
     return {
@@ -218,7 +259,156 @@ async function getCodexUsageFromAppServer(): Promise<AgentUsage> {
       sevenDay: snapshot.secondary ? mapCodexWindow(snapshot.secondary) : null,
     };
   } catch (error: any) {
-    return { fiveHour: null, sevenDay: null, error: String(error.message ?? error) };
+    return {
+      fiveHour: null,
+      sevenDay: null,
+      error: String(error.message ?? error),
+    };
+  }
+}
+
+function readCopilotRateLimitsFromAppServer(): Promise<CodexRateLimitsResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawnCopilotAppServerProcess();
+    const rl = readline.createInterface({ input: child.stdout });
+
+    let settled = false;
+    let stderr = '';
+    let requestTimer: NodeJS.Timeout | undefined;
+
+    const doneResolve = (value: CodexRateLimitsResult) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (requestTimer) {
+        clearTimeout(requestTimer);
+      }
+      rl.close();
+      child.kill();
+      resolve(value);
+    };
+
+    const doneReject = (error: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (requestTimer) {
+        clearTimeout(requestTimer);
+      }
+      rl.close();
+      child.kill();
+      reject(error);
+    };
+
+    child.on('error', (err) => {
+      doneReject(
+        new Error(`Failed to start copilot app-server: ${err.message}`),
+      );
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+      if (stderr.length > 4_000) {
+        stderr = stderr.slice(-4_000);
+      }
+    });
+
+    child.stdin.on('error', () => {
+      // ignore EPIPE when the process exits while writing
+    });
+
+    rl.on('line', (line) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        return;
+      }
+
+      let msg: any;
+      try {
+        msg = JSON.parse(trimmed);
+      } catch {
+        return;
+      }
+
+      if (msg.id !== COPILOT_RATE_LIMITS_REQUEST_ID) {
+        return;
+      }
+
+      if (msg.error) {
+        doneReject(
+          new Error(
+            `account/rateLimits/read failed: ${msg.error?.message ?? 'Unknown error'}`,
+          ),
+        );
+        return;
+      }
+
+      doneResolve((msg.result ?? {}) as CodexRateLimitsResult);
+    });
+
+    child.on('exit', (code, signal) => {
+      if (settled) {
+        return;
+      }
+      const detail = stderr.trim() ? ` stderr: ${stderr.trim()}` : '';
+      doneReject(
+        new Error(
+          `copilot app-server exited before response (code=${code}, signal=${signal}).${detail}`,
+        ),
+      );
+    });
+
+    requestTimer = setTimeout(() => {
+      doneReject(new Error('copilot app-server request timed out'));
+    }, COPILOT_APP_SERVER_TIMEOUT_MS);
+
+    const send = (payload: Record<string, any>) => {
+      child.stdin.write(`${JSON.stringify(payload)}\n`);
+    };
+
+    send({
+      jsonrpc: '2.0',
+      id: COPILOT_INIT_REQUEST_ID,
+      method: 'initialize',
+      params: {
+        clientInfo: { name: 'ai-usage-monitor', version: '0.2.7' },
+        capabilities: { experimentalApi: true },
+      },
+    });
+    send({ jsonrpc: '2.0', method: 'initialized', params: {} });
+    send({
+      jsonrpc: '2.0',
+      id: COPILOT_RATE_LIMITS_REQUEST_ID,
+      method: 'account/rateLimits/read',
+      params: null,
+    });
+  });
+}
+
+async function getCodexUsageFromAppServer(): Promise<AgentUsage> {
+  try {
+    const result = await readCodexRateLimitsFromAppServer();
+    const snapshot = pickCodexSnapshot(result);
+    if (!snapshot?.primary) {
+      return {
+        fiveHour: null,
+        sevenDay: null,
+        error: 'No primary rate limit window from app server',
+      };
+    }
+
+    return {
+      fiveHour: mapCodexWindow(snapshot.primary),
+      sevenDay: snapshot.secondary ? mapCodexWindow(snapshot.secondary) : null,
+    };
+  } catch (error: any) {
+    return {
+      fiveHour: null,
+      sevenDay: null,
+      error: String(error.message ?? error),
+    };
   }
 }
 
@@ -290,7 +480,11 @@ function readCodexRateLimitsFromAppServer(): Promise<CodexRateLimitsResult> {
       }
 
       if (msg.error) {
-        doneReject(new Error(`account/rateLimits/read failed: ${msg.error?.message ?? 'Unknown error'}`));
+        doneReject(
+          new Error(
+            `account/rateLimits/read failed: ${msg.error?.message ?? 'Unknown error'}`,
+          ),
+        );
         return;
       }
 
@@ -302,7 +496,11 @@ function readCodexRateLimitsFromAppServer(): Promise<CodexRateLimitsResult> {
         return;
       }
       const detail = stderr.trim() ? ` stderr: ${stderr.trim()}` : '';
-      doneReject(new Error(`codex app-server exited before response (code=${code}, signal=${signal}).${detail}`));
+      doneReject(
+        new Error(
+          `codex app-server exited before response (code=${code}, signal=${signal}).${detail}`,
+        ),
+      );
     });
 
     requestTimer = setTimeout(() => {
@@ -323,16 +521,25 @@ function readCodexRateLimitsFromAppServer(): Promise<CodexRateLimitsResult> {
       },
     });
     send({ jsonrpc: '2.0', method: 'initialized', params: {} });
-    send({ jsonrpc: '2.0', id: CODEX_RATE_LIMITS_REQUEST_ID, method: 'account/rateLimits/read', params: null });
+    send({
+      jsonrpc: '2.0',
+      id: CODEX_RATE_LIMITS_REQUEST_ID,
+      method: 'account/rateLimits/read',
+      params: null,
+    });
   });
 }
 
 function spawnCodexAppServerProcess() {
   if (process.platform === 'win32') {
-    return spawn('cmd.exe', ['/d', '/s', '/c', 'codex app-server --listen stdio://'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+    return spawn(
+      'cmd.exe',
+      ['/d', '/s', '/c', 'codex app-server --listen stdio://'],
+      {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      },
+    );
   }
   return spawn('codex', ['app-server', '--listen', 'stdio://'], {
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -340,19 +547,50 @@ function spawnCodexAppServerProcess() {
   });
 }
 
-function pickCodexSnapshot(result: CodexRateLimitsResult): CodexRateLimitSnapshot | null {
+function spawnCopilotAppServerProcess() {
+  if (process.platform === 'win32') {
+    return spawn(
+      'cmd.exe',
+      ['/d', '/s', '/c', 'copilot app-server --listen stdio://'],
+      {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      },
+    );
+  }
+  return spawn('copilot', ['app-server', '--listen', 'stdio://'], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+}
+
+function pickCodexSnapshot(
+  result: CodexRateLimitsResult,
+): CodexRateLimitSnapshot | null {
+  return pickRateLimitSnapshot(result, ['codex']);
+}
+
+function pickRateLimitSnapshot(
+  result: CodexRateLimitsResult,
+  preferredKeywords: string[],
+): CodexRateLimitSnapshot | null {
   const byLimitId = result.rateLimitsByLimitId;
   if (byLimitId && typeof byLimitId === 'object') {
-    if (byLimitId.codex) {
-      return byLimitId.codex;
+    for (const keyword of preferredKeywords) {
+      const direct = byLimitId[keyword];
+      if (direct) {
+        return direct;
+      }
     }
 
     for (const [key, value] of Object.entries(byLimitId)) {
-      if (key.toLowerCase().includes('codex')) {
+      const loweredKey = key.toLowerCase();
+      if (preferredKeywords.some((keyword) => loweredKey.includes(keyword))) {
         return value;
       }
-      const label = `${value.limitId ?? ''} ${value.limitName ?? ''}`.toLowerCase();
-      if (label.includes('codex')) {
+      const label =
+        `${value.limitId ?? ''} ${value.limitName ?? ''}`.toLowerCase();
+      if (preferredKeywords.some((keyword) => label.includes(keyword))) {
         return value;
       }
     }
@@ -391,7 +629,11 @@ async function getCodexUsageFromSessions(): Promise<AgentUsage> {
     const sessionsDir = path.join(HOME, '.codex', 'sessions');
     const files = findJsonlFiles(sessionsDir);
     if (files.length === 0) {
-      return { fiveHour: null, sevenDay: null, error: 'No session files found' };
+      return {
+        fiveHour: null,
+        sevenDay: null,
+        error: 'No session files found',
+      };
     }
 
     const filesWithMtime = files.map((filePath) => {
@@ -404,14 +646,20 @@ async function getCodexUsageFromSessions(): Promise<AgentUsage> {
     filesWithMtime.sort((a, b) => b.mtime - a.mtime);
 
     let rateLimits: any = null;
-    for (const file of filesWithMtime.slice(0, SESSION_SCAN_FILE_LIMIT).map((entry) => entry.path)) {
+    for (const file of filesWithMtime
+      .slice(0, SESSION_SCAN_FILE_LIMIT)
+      .map((entry) => entry.path)) {
       for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
         if (!line.trim()) {
           continue;
         }
         try {
           const data = JSON.parse(line);
-          if (data.type === 'event_msg' && data.payload?.type === 'token_count' && data.payload?.rate_limits) {
+          if (
+            data.type === 'event_msg' &&
+            data.payload?.type === 'token_count' &&
+            data.payload?.rate_limits
+          ) {
             rateLimits = data.payload.rate_limits;
           }
         } catch {
@@ -429,8 +677,12 @@ async function getCodexUsageFromSessions(): Promise<AgentUsage> {
 
     const primary = rateLimits.primary ?? {};
     const secondary = rateLimits.secondary ?? null;
-    const primaryUsed = Number(primary.used_percent ?? primary.usedPercent ?? 0);
-    const secondaryUsed = Number(secondary?.used_percent ?? secondary?.usedPercent ?? 0);
+    const primaryUsed = Number(
+      primary.used_percent ?? primary.usedPercent ?? 0,
+    );
+    const secondaryUsed = Number(
+      secondary?.used_percent ?? secondary?.usedPercent ?? 0,
+    );
     return {
       fiveHour: {
         utilization: Number.isFinite(primaryUsed) ? primaryUsed : 0,
@@ -488,7 +740,10 @@ function formatHttpError(error: unknown): string {
   return String((error as any)?.message ?? error);
 }
 
-function formatUsageErrorDetail(provider: 'claude' | 'codex', errorText: string): string {
+function formatUsageErrorDetail(
+  provider: 'claude' | 'codex' | 'copilot',
+  errorText: string,
+): string {
   const text = String(errorText || '').toLowerCase();
   if (provider === 'claude') {
     if (
@@ -513,6 +768,39 @@ function formatUsageErrorDetail(provider: 'claude' | 'codex', errorText: string)
     return 'CLAUDE USAGE UNAVAILABLE';
   }
 
+  if (provider === 'codex') {
+    if (
+      text.includes('authentication') ||
+      text.includes('unauthorized') ||
+      text.includes('401') ||
+      text.includes('login required') ||
+      text.includes('not logged in')
+    ) {
+      return 'CODEX CLI LOGIN REQUIRED (run: codex login)';
+    }
+    if (
+      text.includes('failed to start codex app-server') &&
+      (text.includes('enoent') ||
+        text.includes('not recognized') ||
+        text.includes('cannot find'))
+    ) {
+      return 'CODEX CLI NOT FOUND (check codex install)';
+    }
+    if (
+      text.includes('no session files found') ||
+      text.includes('no rate limits data')
+    ) {
+      return 'CODEX CLI DATA MISSING (run: codex once)';
+    }
+    if (text.includes('timed out') || text.includes('timeout')) {
+      return 'CODEX CLI TIMEOUT';
+    }
+    if (text.includes('app-server')) {
+      return 'CODEX APP-SERVER UNAVAILABLE';
+    }
+    return 'CODEX USAGE UNAVAILABLE';
+  }
+
   if (
     text.includes('authentication') ||
     text.includes('unauthorized') ||
@@ -520,27 +808,30 @@ function formatUsageErrorDetail(provider: 'claude' | 'codex', errorText: string)
     text.includes('login required') ||
     text.includes('not logged in')
   ) {
-    return 'CODEX CLI LOGIN REQUIRED (run: codex login)';
+    return 'COPILOT CLI LOGIN REQUIRED';
   }
   if (
-    text.includes('failed to start codex app-server') &&
-    (text.includes('enoent') || text.includes('not recognized') || text.includes('cannot find'))
+    text.includes('failed to start copilot app-server') &&
+    (text.includes('enoent') ||
+      text.includes('not recognized') ||
+      text.includes('cannot find'))
   ) {
-    return 'CODEX CLI NOT FOUND (check codex install)';
-  }
-  if (text.includes('no session files found') || text.includes('no rate limits data')) {
-    return 'CODEX CLI DATA MISSING (run: codex once)';
+    return 'COPILOT CLI NOT FOUND';
   }
   if (text.includes('timed out') || text.includes('timeout')) {
-    return 'CODEX CLI TIMEOUT';
+    return 'COPILOT CLI TIMEOUT';
   }
   if (text.includes('app-server')) {
-    return 'CODEX APP-SERVER UNAVAILABLE';
+    return 'COPILOT APP-SERVER UNAVAILABLE';
   }
-  return 'CODEX USAGE UNAVAILABLE';
+  return 'COPILOT USAGE UNAVAILABLE';
 }
 
-function httpsGet(hostname: string, urlPath: string, headers: Record<string, string>): Promise<any> {
+function httpsGet(
+  hostname: string,
+  urlPath: string,
+  headers: Record<string, string>,
+): Promise<any> {
   return httpsJsonRequest('GET', hostname, urlPath, headers);
 }
 
@@ -548,7 +839,7 @@ function httpsPost(
   hostname: string,
   urlPath: string,
   headers: Record<string, string>,
-  body: unknown
+  body: unknown,
 ): Promise<any> {
   return httpsJsonRequest('POST', hostname, urlPath, headers, body);
 }
@@ -558,7 +849,7 @@ function httpsJsonRequest(
   hostname: string,
   urlPath: string,
   headers: Record<string, string>,
-  body?: unknown
+  body?: unknown,
 ): Promise<any> {
   return new Promise((resolve, reject) => {
     let payload = '';
@@ -571,37 +862,40 @@ function httpsJsonRequest(
       reqHeaders['Content-Length'] = Buffer.byteLength(payload).toString();
     }
 
-    const req = https.request({ hostname, path: urlPath, method, headers: reqHeaders }, (res) => {
-      let raw = '';
-      res.on('data', (chunk) => {
-        raw += chunk;
-      });
-      res.on('end', () => {
-        if (res.statusCode !== 200) {
-          const status = res.statusCode ?? 0;
-          let message = `HTTP ${status}`;
-          try {
-            const errBody = JSON.parse(raw);
-            if (errBody?.error?.message) {
-              message = `HTTP ${status}: ${errBody.error.message}`;
-            } else if (raw) {
-              message = `HTTP ${status}: ${raw}`;
+    const req = https.request(
+      { hostname, path: urlPath, method, headers: reqHeaders },
+      (res) => {
+        let raw = '';
+        res.on('data', (chunk) => {
+          raw += chunk;
+        });
+        res.on('end', () => {
+          if (res.statusCode !== 200) {
+            const status = res.statusCode ?? 0;
+            let message = `HTTP ${status}`;
+            try {
+              const errBody = JSON.parse(raw);
+              if (errBody?.error?.message) {
+                message = `HTTP ${status}: ${errBody.error.message}`;
+              } else if (raw) {
+                message = `HTTP ${status}: ${raw}`;
+              }
+            } catch {
+              if (raw) {
+                message = `HTTP ${status}: ${raw}`;
+              }
             }
-          } catch {
-            if (raw) {
-              message = `HTTP ${status}: ${raw}`;
-            }
+            reject(new HttpStatusError(status, message, raw));
+            return;
           }
-          reject(new HttpStatusError(status, message, raw));
-          return;
-        }
-        try {
-          resolve(JSON.parse(raw));
-        } catch (error) {
-          reject(error);
-        }
-      });
-    });
+          try {
+            resolve(JSON.parse(raw));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      },
+    );
 
     req.on('error', reject);
     req.setTimeout(8_000, () => {

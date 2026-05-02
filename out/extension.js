@@ -43,6 +43,7 @@ const DEFAULT_PROVIDERS = ['claude', 'codex'];
 const DEFAULT_PROVIDER_MARKERS = {
     claude: '🟠',
     codex: '🔵',
+    copilot: '🟣',
 };
 function activate(context) {
     usageBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 1000);
@@ -69,6 +70,15 @@ async function doRefresh() {
                 data: await (0, provider_adapter_1.getClaudeUsage)(),
             };
         }
+        if (key === 'copilot') {
+            return {
+                key,
+                name: 'Copilot',
+                label: 'G',
+                scale: 'percent',
+                data: await (0, provider_adapter_1.getCopilotUsage)(),
+            };
+        }
         return {
             key,
             name: 'Codex',
@@ -87,6 +97,7 @@ function getDisplayConfig() {
     const providerMarkers = {
         claude: normalizeMarker(markerConfig?.claude, DEFAULT_PROVIDER_MARKERS.claude),
         codex: normalizeMarker(markerConfig?.codex, DEFAULT_PROVIDER_MARKERS.codex),
+        copilot: normalizeMarker(markerConfig?.copilot, DEFAULT_PROVIDER_MARKERS.copilot),
     };
     const warningThreshold = clampPercent(config.get('warningThreshold', 70));
     const criticalThreshold = Math.max(warningThreshold, clampPercent(config.get('criticalThreshold', 85)));
@@ -106,7 +117,9 @@ function getDisplayConfig() {
     };
 }
 function normalizeWeeklyExhaustedDisplay(value) {
-    const normalized = String(value ?? '').trim().toLowerCase();
+    const normalized = String(value ?? '')
+        .trim()
+        .toLowerCase();
     return normalized === 'remainingdays' ? 'remainingDays' : 'percent';
 }
 function normalizeMarker(value, fallback) {
@@ -127,6 +140,7 @@ function getEnabledProviders() {
     const configuredProviders = config.get('enabledProviders', [
         'claude',
         'codex',
+        'copilot',
     ]);
     const normalizedFromConfig = normalizeProviderList(configuredProviders);
     const fallbackFromConfig = normalizedFromConfig.length > 0
@@ -167,6 +181,12 @@ function normalizeProviderToken(token) {
     if (token === 'codex' || token === 'openai' || token === 'o') {
         return 'codex';
     }
+    if (token === 'copilot' ||
+        token === 'github' ||
+        token === 'gh' ||
+        token === 'g') {
+        return 'copilot';
+    }
     return null;
 }
 function toPercent(utilization, scale) {
@@ -182,7 +202,7 @@ function renderNoProvidersBar(bar, display) {
 function renderCombinedBar(bar, providers, display) {
     bar.text = providers
         .map((provider) => formatSegment(provider, display))
-        .join('  |  ');
+        .join('   ');
     const usable = providers
         .map((provider) => getAlertPercent(provider.data, provider.scale))
         .filter((v) => typeof v === 'number');
