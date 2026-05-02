@@ -11,7 +11,8 @@
       ],
       "env": {
         "NODE_OPTIONS": "--no-deprecation --no-warnings",
-        "NODE_NO_WARNINGS": "1"
+        "NODE_NO_WARNINGS": "1",
+        "AI_USAGE_PROVIDERS": "codex"
       },
       "outFiles": ["${workspaceFolder}/out/**/*.js"],
       "preLaunchTask": "npm: compile"
@@ -26,7 +27,8 @@
       ],
       "env": {
         "NODE_OPTIONS": "--no-deprecation --no-warnings",
-        "NODE_NO_WARNINGS": "1"
+        "NODE_NO_WARNINGS": "1",
+        "AI_USAGE_PROVIDERS": "codex"
       },
       "outFiles": ["${workspaceFolder}/out/**/*.js"]
     }

@@ -128,7 +128,8 @@ function renderCombinedBar(bar, providers) {
     }
     else {
         const maxUsed = Math.max(...usable);
-        bar.color = maxUsed >= 85 ? '#f85149' : maxUsed >= 70 ? '#d29922' : undefined;
+        bar.color =
+            maxUsed >= 85 ? '#f85149' : maxUsed >= 70 ? '#d29922' : undefined;
     }
     const tip = new vscode.MarkdownString();
     tip.isTrusted = true;
