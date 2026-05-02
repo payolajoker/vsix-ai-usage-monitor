@@ -2,7 +2,7 @@
 import { AgentUsage, getClaudeUsage, getCodexUsage } from './provider-adapter';
 
 let usageBar: vscode.StatusBarItem;
-let timer: NodeJS.Timeout;
+let timer: ReturnType<typeof setInterval>;
 
 type ProviderKey = 'claude' | 'codex';
 type UsageScale = 'ratio' | 'percent';
@@ -68,7 +68,7 @@ async function doRefresh() {
 }
 
 function getEnabledProviders(): ProviderKey[] {
-  const raw = process.env.AI_USAGE_PROVIDERS;
+  const raw = readEnv('AI_USAGE_PROVIDERS');
   if (!raw || !raw.trim()) {
     return [...DEFAULT_PROVIDERS];
   }
@@ -91,6 +91,13 @@ function getEnabledProviders(): ProviderKey[] {
   }
 
   return enabled.length > 0 ? enabled : [...DEFAULT_PROVIDERS];
+}
+
+function readEnv(name: string): string | undefined {
+  const proc = (
+    globalThis as { process?: { env?: Record<string, string | undefined> } }
+  ).process;
+  return proc?.env?.[name];
 }
 
 function normalizeProviderToken(token: string): ProviderKey | null {
@@ -132,7 +139,7 @@ function renderCombinedBar(
     .join('  |  ');
 
   const usable = providers
-    .map((provider) => getFiveHourPercent(provider.data, provider.scale))
+    .map((provider) => getAlertPercent(provider.data, provider.scale))
     .filter((v): v is number => typeof v === 'number');
   if (usable.length === 0) {
     bar.color = '#6e7681';
@@ -163,6 +170,16 @@ function getFiveHourPercent(
   return toPercent(data.fiveHour.utilization, scale);
 }
 
+function getAlertPercent(data: AgentUsage, scale: UsageScale): number | null {
+  if (data.error) {
+    return null;
+  }
+  if (isWeeklyExhausted(data, scale)) {
+    return 100;
+  }
+  return getFiveHourPercent(data, scale);
+}
+
 function formatSegment(
   emoji: string,
   label: string,
@@ -172,9 +189,21 @@ function formatSegment(
   if (data.error || !data.fiveHour) {
     return `${emoji} ${label} --`;
   }
+
+  if (isWeeklyExhausted(data, scale)) {
+    return `${emoji} ${label} 100%`;
+  }
+
   const used5h = toPercent(data.fiveHour.utilization, scale);
   const reset5h = formatReset(data.fiveHour.resetsAt);
   return `${emoji} ${label} ${used5h}%${reset5h ? ` ${reset5h}` : ''}`;
+}
+
+function isWeeklyExhausted(data: AgentUsage, scale: UsageScale): boolean {
+  if (!data.sevenDay) {
+    return false;
+  }
+  return toPercent(data.sevenDay.utilization, scale) >= 100;
 }
 
 function appendUsageTooltip(
@@ -189,9 +218,21 @@ function appendUsageTooltip(
     return;
   }
 
+  tip.appendMarkdown(`| | Used | Resets In |\n|---|---|---|\n`);
+  if (isWeeklyExhausted(data, scale) && data.sevenDay) {
+    const used7d = toPercent(data.sevenDay.utilization, scale);
+    const reset7d = formatReset(data.sevenDay.resetsAt);
+    tip.appendMarkdown(
+      `| 7-Day Weekly | **${used7d}%** | ${reset7d || '--'} |\n`,
+    );
+    tip.appendMarkdown(
+      `\n- Weekly cap reached; short-session reset is unavailable.\n`,
+    );
+    return;
+  }
+
   const used5h = toPercent(data.fiveHour.utilization, scale);
   const reset5h = formatReset(data.fiveHour.resetsAt);
-  tip.appendMarkdown(`| | Used | Resets In |\n|---|---|---|\n`);
   tip.appendMarkdown(
     `| 5-Hour Session | **${used5h}%** | ${reset5h || '--'} |\n`,
   );
