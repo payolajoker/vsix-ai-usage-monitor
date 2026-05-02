@@ -97,6 +97,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "package:vsix": "npm run compile && npx @vscode/vsce package",
     "probe:codex-web": "node tools/codex-rate-limit-check-server.mjs",
     "test:tray": "npm --prefix tray-app test",
     "release:check": "node scripts/release-gate.mjs"

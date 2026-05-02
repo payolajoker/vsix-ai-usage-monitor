@@ -66,3 +66,29 @@ Set `AI_USAGE_PROVIDERS` to control which providers are queried and shown:
 
 For debug sessions, you can also place this in `.vscode/launch.json` under a
 profile `env` block.
+
+## 7) Running as an installed extension (non-debug)
+
+To install and run the extension as a normal user-installed extension instead of
+the Extension Development Host:
+
+```bash
+# Build and package in one step
+npm run package:vsix
+
+# Install into your running VS Code
+code --install-extension ai-usage-statusbar-0.2.7.vsix --force
+```
+
+Then reload the VS Code window when prompted.
+
+**Iteration workflow** (after changing source):
+
+```bash
+npm run package:vsix
+code --install-extension ai-usage-statusbar-0.2.7.vsix --force
+# Reload VS Code window
+```
+
+> Tip: bump `version` in `package.json` before re-packaging to avoid VS Code
+> caching the old build.
