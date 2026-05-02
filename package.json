@@ -26,7 +26,65 @@
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
-  "contributes": {},
+  "contributes": {
+    "configuration": {
+      "title": "AI Usage Monitor",
+      "properties": {
+        "aiUsageMonitor.enabledProviders": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "codex"
+            ]
+          },
+          "uniqueItems": true,
+          "default": [
+            "claude",
+            "codex"
+          ],
+          "description": "Providers to enable in status bar and refresh cycle."
+        },
+        "aiUsageMonitor.showProviderLetter": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show provider letter (C/O) next to each provider marker in the status bar."
+        },
+        "aiUsageMonitor.providerMarkers": {
+          "type": "object",
+          "default": {
+            "claude": "🟠",
+            "codex": "🔵"
+          },
+          "description": "Provider-to-marker mapping used in the status bar. Example: { \"claude\": \"🟣\", \"codex\": \"🟢\" }"
+        },
+        "aiUsageMonitor.warningThreshold": {
+          "type": "number",
+          "default": 70,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Usage percentage threshold where the status bar switches to warning color."
+        },
+        "aiUsageMonitor.criticalThreshold": {
+          "type": "number",
+          "default": 85,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Usage percentage threshold where the status bar switches to critical color."
+        },
+        "aiUsageMonitor.statusBarColors": {
+          "type": "object",
+          "default": {
+            "disabled": "#6e7681",
+            "warning": "#d29922",
+            "critical": "#f85149"
+          },
+          "description": "Status bar color mapping. Supported keys: disabled, warning, critical."
+        }
+      }
+    }
+  },
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",

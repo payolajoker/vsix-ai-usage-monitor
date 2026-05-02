@@ -40,6 +40,10 @@ const provider_adapter_1 = require("./provider-adapter");
 let usageBar;
 let timer;
 const DEFAULT_PROVIDERS = ['claude', 'codex'];
+const DEFAULT_PROVIDER_MARKERS = {
+    claude: '🟠',
+    codex: '🔵',
+};
 function activate(context) {
     usageBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 1000);
     usageBar.show();
@@ -49,9 +53,10 @@ function activate(context) {
     context.subscriptions.push({ dispose: () => clearInterval(timer) });
 }
 async function doRefresh() {
+    const displayConfig = getDisplayConfig();
     const enabledProviders = getEnabledProviders();
     if (enabledProviders.length === 0) {
-        renderNoProvidersBar(usageBar);
+        renderNoProvidersBar(usageBar, displayConfig);
         return;
     }
     const providers = await Promise.all(enabledProviders.map(async (key) => {
@@ -59,7 +64,6 @@ async function doRefresh() {
             return {
                 key,
                 name: 'Claude',
-                emoji: '🟠',
                 label: 'C',
                 scale: 'ratio',
                 data: await (0, provider_adapter_1.getClaudeUsage)(),
@@ -68,18 +72,61 @@ async function doRefresh() {
         return {
             key,
             name: 'Codex',
-            emoji: '🔵',
             label: 'O',
             scale: 'percent',
             data: await (0, provider_adapter_1.getCodexUsage)(),
         };
     }));
-    renderCombinedBar(usageBar, providers);
+    renderCombinedBar(usageBar, providers, displayConfig);
+}
+function getDisplayConfig() {
+    const config = vscode.workspace.getConfiguration('aiUsageMonitor');
+    const showProviderLetter = config.get('showProviderLetter', true);
+    const markerConfig = config.get('providerMarkers', {});
+    const providerMarkers = {
+        claude: normalizeMarker(markerConfig?.claude, DEFAULT_PROVIDER_MARKERS.claude),
+        codex: normalizeMarker(markerConfig?.codex, DEFAULT_PROVIDER_MARKERS.codex),
+    };
+    const warningThreshold = clampPercent(config.get('warningThreshold', 70));
+    const criticalThreshold = Math.max(warningThreshold, clampPercent(config.get('criticalThreshold', 85)));
+    const colorConfig = config.get('statusBarColors', {});
+    const statusColors = {
+        disabled: normalizeColor(colorConfig?.disabled, '#6e7681'),
+        warning: normalizeColor(colorConfig?.warning, '#d29922'),
+        critical: normalizeColor(colorConfig?.critical, '#f85149'),
+    };
+    return {
+        showProviderLetter,
+        providerMarkers,
+        warningThreshold,
+        criticalThreshold,
+        statusColors,
+    };
+}
+function normalizeMarker(value, fallback) {
+    return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+function clampPercent(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return 0;
+    }
+    return Math.max(0, Math.min(100, Math.round(numeric)));
+}
+function normalizeColor(value, fallback) {
+    return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 function getEnabledProviders() {
+    const config = vscode.workspace.getConfiguration('aiUsageMonitor');
+    const configuredProviders = config.get('enabledProviders', [
+        'claude',
+        'codex',
+    ]);
+    const normalizedFromConfig = normalizeProviderList(configuredProviders);
+    const fallbackFromConfig = normalizedFromConfig.length > 0 ? normalizedFromConfig : [...DEFAULT_PROVIDERS];
     const raw = readEnv('AI_USAGE_PROVIDERS');
     if (!raw || !raw.trim()) {
-        return [...DEFAULT_PROVIDERS];
+        return fallbackFromConfig;
     }
     const tokens = raw
         .split(/[\s,]+/)
@@ -88,14 +135,18 @@ function getEnabledProviders() {
     if (tokens.includes('none') || tokens.includes('off')) {
         return [];
     }
+    const normalizedFromEnv = normalizeProviderList(tokens);
+    return normalizedFromEnv.length > 0 ? normalizedFromEnv : fallbackFromConfig;
+}
+function normalizeProviderList(input) {
     const enabled = [];
-    for (const token of tokens) {
-        const normalized = normalizeProviderToken(token);
+    for (const token of input) {
+        const normalized = normalizeProviderToken(String(token).trim().toLowerCase());
         if (normalized && !enabled.includes(normalized)) {
             enabled.push(normalized);
         }
     }
-    return enabled.length > 0 ? enabled : [...DEFAULT_PROVIDERS];
+    return enabled;
 }
 function readEnv(name) {
     const proc = globalThis.process;
@@ -114,26 +165,30 @@ function toPercent(utilization, scale) {
     const raw = scale === 'ratio' && utilization <= 1 ? utilization * 100 : utilization;
     return Math.max(0, Math.min(100, Math.round(raw)));
 }
-function renderNoProvidersBar(bar) {
+function renderNoProvidersBar(bar, display) {
     bar.text = 'AI usage disabled';
-    bar.color = '#6e7681';
+    bar.color = display.statusColors.disabled;
     bar.tooltip =
-        'No providers are enabled. Set AI_USAGE_PROVIDERS to codex, claude, or both (comma/space separated).';
+        'No providers are enabled. Configure aiUsageMonitor.enabledProviders (or override with AI_USAGE_PROVIDERS).';
 }
-function renderCombinedBar(bar, providers) {
+function renderCombinedBar(bar, providers, display) {
     bar.text = providers
-        .map((provider) => formatSegment(provider.emoji, provider.label, provider.data, provider.scale))
+        .map((provider) => formatSegment(provider, display))
         .join('  |  ');
     const usable = providers
         .map((provider) => getAlertPercent(provider.data, provider.scale))
         .filter((v) => typeof v === 'number');
     if (usable.length === 0) {
-        bar.color = '#6e7681';
+        bar.color = display.statusColors.disabled;
     }
     else {
         const maxUsed = Math.max(...usable);
         bar.color =
-            maxUsed >= 85 ? '#f85149' : maxUsed >= 70 ? '#d29922' : undefined;
+            maxUsed >= display.criticalThreshold
+                ? display.statusColors.critical
+                : maxUsed >= display.warningThreshold
+                    ? display.statusColors.warning
+                    : undefined;
     }
     const tip = new vscode.MarkdownString();
     tip.isTrusted = true;
@@ -160,16 +215,22 @@ function getAlertPercent(data, scale) {
     }
     return getFiveHourPercent(data, scale);
 }
-function formatSegment(emoji, label, data, scale) {
+function formatSegment(provider, display) {
+    const prefix = formatProviderPrefix(provider, display);
+    const { data, scale } = provider;
     if (data.error || !data.fiveHour) {
-        return `${emoji} ${label} --`;
+        return `${prefix} --`;
     }
     if (isWeeklyExhausted(data, scale)) {
-        return `${emoji} ${label} 100%`;
+        return `${prefix} 100%`;
     }
     const used5h = toPercent(data.fiveHour.utilization, scale);
     const reset5h = formatReset(data.fiveHour.resetsAt);
-    return `${emoji} ${label} ${used5h}%${reset5h ? ` ${reset5h}` : ''}`;
+    return `${prefix} ${used5h}%${reset5h ? ` ${reset5h}` : ''}`;
+}
+function formatProviderPrefix(provider, display) {
+    const marker = display.providerMarkers[provider.key] ?? DEFAULT_PROVIDER_MARKERS[provider.key];
+    return display.showProviderLetter ? `${marker} ${provider.label}` : marker;
 }
 function isWeeklyExhausted(data, scale) {
     if (!data.sevenDay) {
