@@ -123,7 +123,9 @@ function getEnabledProviders() {
         'codex',
     ]);
     const normalizedFromConfig = normalizeProviderList(configuredProviders);
-    const fallbackFromConfig = normalizedFromConfig.length > 0 ? normalizedFromConfig : [...DEFAULT_PROVIDERS];
+    const fallbackFromConfig = normalizedFromConfig.length > 0
+        ? normalizedFromConfig
+        : [...DEFAULT_PROVIDERS];
     const raw = readEnv('AI_USAGE_PROVIDERS');
     if (!raw || !raw.trim()) {
         return fallbackFromConfig;
@@ -229,7 +231,8 @@ function formatSegment(provider, display) {
     return `${prefix} ${used5h}%${reset5h ? ` ${reset5h}` : ''}`;
 }
 function formatProviderPrefix(provider, display) {
-    const marker = display.providerMarkers[provider.key] ?? DEFAULT_PROVIDER_MARKERS[provider.key];
+    const marker = display.providerMarkers[provider.key] ??
+        DEFAULT_PROVIDER_MARKERS[provider.key];
     return display.showProviderLetter ? `${marker} ${provider.label}` : marker;
 }
 function isWeeklyExhausted(data, scale) {
