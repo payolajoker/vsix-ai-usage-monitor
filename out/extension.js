@@ -140,7 +140,6 @@ function getEnabledProviders() {
     const configuredProviders = config.get('enabledProviders', [
         'claude',
         'codex',
-        'copilot',
     ]);
     const normalizedFromConfig = normalizeProviderList(configuredProviders);
     const fallbackFromConfig = normalizedFromConfig.length > 0

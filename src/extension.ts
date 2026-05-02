@@ -178,7 +178,6 @@ function getEnabledProviders(): ProviderKey[] {
   const configuredProviders = config.get<string[]>('enabledProviders', [
     'claude',
     'codex',
-    'copilot',
   ]);
 
   const normalizedFromConfig = normalizeProviderList(configuredProviders);

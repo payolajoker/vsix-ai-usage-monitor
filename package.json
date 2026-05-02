@@ -43,8 +43,7 @@
           "uniqueItems": true,
           "default": [
             "claude",
-            "codex",
-            "copilot"
+            "codex"
           ],
           "description": "Providers to enable in status bar and refresh cycle."
         },

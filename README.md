@@ -39,7 +39,7 @@ appear.
 
 You can choose which providers are active using `AI_USAGE_PROVIDERS`.
 
-- Default (unset): `claude,codex,copilot`
+- Default (unset): `claude,codex`
 - Codex only: `AI_USAGE_PROVIDERS=codex`
 - Claude only: `AI_USAGE_PROVIDERS=claude`
 - Copilot only: `AI_USAGE_PROVIDERS=copilot`
@@ -50,6 +50,10 @@ Accepted tokens are comma or space separated and support aliases:
 - Claude: `claude`, `anthropic`, `c`
 - Codex: `codex`, `openai`, `o`
 - Copilot: `copilot`, `github`, `gh`, `g`
+
+Note: Copilot monitoring depends on a compatible Copilot CLI/API surface that
+can expose rate-limit telemetry. If unavailable, the provider reports an
+explicit unsupported/unavailable state.
 
 ## Status Bar Example
 

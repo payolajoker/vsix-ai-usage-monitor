@@ -22,6 +22,8 @@ const CLAUDE_OAUTH_CLIENT_ID =
   process.env.CLAUDE_CODE_OAUTH_CLIENT_ID ||
   '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 
+let copilotAppServerSupportedCache: boolean | null = null;
+
 export interface UsageResult {
   utilization: number;
   resetsAt: string;
@@ -244,6 +246,15 @@ export async function getCopilotUsage(): Promise<AgentUsage> {
 
 async function getCopilotUsageFromAppServer(): Promise<AgentUsage> {
   try {
+    const supportsAppServer = await supportsCopilotAppServer();
+    if (!supportsAppServer) {
+      return {
+        fiveHour: null,
+        sevenDay: null,
+        error: 'Copilot CLI version does not expose app-server rate limits',
+      };
+    }
+
     const result = await readCopilotRateLimitsFromAppServer();
     const snapshot = pickRateLimitSnapshot(result, ['copilot', 'github']);
     if (!snapshot?.primary) {
@@ -265,6 +276,35 @@ async function getCopilotUsageFromAppServer(): Promise<AgentUsage> {
       error: String(error.message ?? error),
     };
   }
+}
+
+function supportsCopilotAppServer(): Promise<boolean> {
+  if (copilotAppServerSupportedCache !== null) {
+    return Promise.resolve(copilotAppServerSupportedCache);
+  }
+
+  return new Promise((resolve) => {
+    const child = spawnCopilotHelpProcess();
+    let stdout = '';
+
+    const finalize = (value: boolean) => {
+      copilotAppServerSupportedCache = value;
+      resolve(value);
+    };
+
+    child.on('error', () => finalize(false));
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+      if (stdout.length > 30_000) {
+        stdout = stdout.slice(-30_000);
+      }
+    });
+
+    child.on('exit', () => {
+      finalize(stdout.toLowerCase().includes('app-server'));
+    });
+  });
 }
 
 function readCopilotRateLimitsFromAppServer(): Promise<CodexRateLimitsResult> {
@@ -564,6 +604,19 @@ function spawnCopilotAppServerProcess() {
   });
 }
 
+function spawnCopilotHelpProcess() {
+  if (process.platform === 'win32') {
+    return spawn('cmd.exe', ['/d', '/s', '/c', 'copilot --help'], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
+    });
+  }
+  return spawn('copilot', ['--help'], {
+    stdio: ['ignore', 'pipe', 'ignore'],
+    windowsHide: true,
+  });
+}
+
 function pickCodexSnapshot(
   result: CodexRateLimitsResult,
 ): CodexRateLimitSnapshot | null {
@@ -817,6 +870,9 @@ function formatUsageErrorDetail(
       text.includes('cannot find'))
   ) {
     return 'COPILOT CLI NOT FOUND';
+  }
+  if (text.includes('does not expose app-server rate limits')) {
+    return 'COPILOT CLI VERSION HAS NO RATE-LIMIT API';
   }
   if (text.includes('timed out') || text.includes('timeout')) {
     return 'COPILOT CLI TIMEOUT';
