@@ -24,6 +24,67 @@ VS Code, and optionally through the companion Windows tray app.
 - Codex source: `codex app-server` (`account/rateLimits/read`) with local
   fallback
 
+### Provider and Color Configuration
+
+Provider enable/disable and status bar color behavior are configured via the
+extension settings (`aiUsageMonitor.*`).
+
+This extension uses settings as the single source of truth for behavior.
+
+- `aiUsageMonitor.enabledProviders`
+  - Type: `string[]`
+  - Allowed values: `claude`, `codex`
+  - Example: `["codex"]` to run Codex only
+  - Use `[]` to disable all providers
+- `aiUsageMonitor.enableThresholdColors`
+  - Type: `boolean`
+  - `true`: apply warning/critical colors based on thresholds
+  - `false`: keep default status bar foreground color when data is available
+- `aiUsageMonitor.showProviderLetter`
+  - Type: `boolean`
+  - `true`: show marker plus provider letter (for example `🔵 O`)
+  - `false`: show marker only (for example `🔵`)
+- `aiUsageMonitor.providerMarkers`
+  - Type: `object`
+  - Keys: `claude`, `codex`
+  - Customize provider marker symbols
+- `aiUsageMonitor.weeklyExhaustedDisplay`
+  - Type: `string`
+  - Values: `percent`, `remainingDays`
+  - Controls status-bar display when weekly cap is exhausted
+- `aiUsageMonitor.warningThreshold`
+  - Type: `number` (0-100)
+  - Warning color threshold
+- `aiUsageMonitor.criticalThreshold`
+  - Type: `number` (0-100)
+  - Critical color threshold
+- `aiUsageMonitor.statusBarColors`
+  - Type: `object`
+  - Keys: `disabled`, `warning`, `critical`
+  - Set colors that match your VS Code theme
+
+Example `settings.json`:
+
+```json
+{
+  "aiUsageMonitor.enabledProviders": ["codex"],
+  "aiUsageMonitor.enableThresholdColors": true,
+  "aiUsageMonitor.showProviderLetter": false,
+  "aiUsageMonitor.providerMarkers": {
+    "claude": "C",
+    "codex": "O"
+  },
+  "aiUsageMonitor.weeklyExhaustedDisplay": "remainingDays",
+  "aiUsageMonitor.warningThreshold": 70,
+  "aiUsageMonitor.criticalThreshold": 90,
+  "aiUsageMonitor.statusBarColors": {
+    "disabled": "#8b949e",
+    "warning": "#e3b341",
+    "critical": "#ff7b72"
+  }
+}
+```
+
 ## Extension Requirements
 
 | Tool        | Requirement                         |
@@ -33,20 +94,6 @@ VS Code, and optionally through the companion Windows tray app.
 
 Configured tools must be installed and used at least once for usage data to
 appear.
-
-## Provider Toggle via Env
-
-You can choose which providers are active using `AI_USAGE_PROVIDERS`.
-
-- Default (unset): `claude,codex`
-- Codex only: `AI_USAGE_PROVIDERS=codex`
-- Claude only: `AI_USAGE_PROVIDERS=claude`
-- Disable all: `AI_USAGE_PROVIDERS=none`
-
-Accepted tokens are comma or space separated and support aliases:
-
-- Claude: `claude`, `anthropic`, `c`
-- Codex: `codex`, `openai`, `o`
 
 ## Copilot Findings (May 2026)
 

@@ -16,6 +16,7 @@ interface ProviderViewModel {
 }
 
 interface DisplayConfig {
+  enableThresholdColors: boolean;
   showProviderLetter: boolean;
   providerMarkers: Record<ProviderKey, string>;
   weeklyExhaustedDisplay: 'percent' | 'remainingDays';
@@ -83,6 +84,10 @@ async function doRefresh() {
 
 function getDisplayConfig(): DisplayConfig {
   const config = vscode.workspace.getConfiguration('aiUsageMonitor');
+  const enableThresholdColors = config.get<boolean>(
+    'enableThresholdColors',
+    true,
+  );
   const showProviderLetter = config.get<boolean>('showProviderLetter', true);
   const weeklyExhaustedDisplay = normalizeWeeklyExhaustedDisplay(
     config.get<string>('weeklyExhaustedDisplay', 'percent'),
@@ -119,6 +124,7 @@ function getDisplayConfig(): DisplayConfig {
   };
 
   return {
+    enableThresholdColors,
     showProviderLetter,
     providerMarkers,
     weeklyExhaustedDisplay,
@@ -155,33 +161,11 @@ function normalizeColor(value: unknown, fallback: string): string {
 
 function getEnabledProviders(): ProviderKey[] {
   const config = vscode.workspace.getConfiguration('aiUsageMonitor');
-  const configuredProviders = config.get<string[]>('enabledProviders', [
-    'claude',
-    'codex',
-  ]);
-
-  const normalizedFromConfig = normalizeProviderList(configuredProviders);
-  const fallbackFromConfig =
-    normalizedFromConfig.length > 0
-      ? normalizedFromConfig
-      : [...DEFAULT_PROVIDERS];
-
-  const raw = readEnv('AI_USAGE_PROVIDERS');
-  if (!raw || !raw.trim()) {
-    return fallbackFromConfig;
+  const configuredProviders = config.get<string[]>('enabledProviders');
+  if (!configuredProviders) {
+    return [...DEFAULT_PROVIDERS];
   }
-
-  const tokens = raw
-    .split(/[\s,]+/)
-    .map((token) => token.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (tokens.includes('none') || tokens.includes('off')) {
-    return [];
-  }
-
-  const normalizedFromEnv = normalizeProviderList(tokens);
-  return normalizedFromEnv.length > 0 ? normalizedFromEnv : fallbackFromConfig;
+  return normalizeProviderList(configuredProviders);
 }
 
 function normalizeProviderList(input: string[]): ProviderKey[] {
@@ -195,13 +179,6 @@ function normalizeProviderList(input: string[]): ProviderKey[] {
     }
   }
   return enabled;
-}
-
-function readEnv(name: string): string | undefined {
-  const proc = (
-    globalThis as { process?: { env?: Record<string, string | undefined> } }
-  ).process;
-  return proc?.env?.[name];
 }
 
 function normalizeProviderToken(token: string): ProviderKey | null {
@@ -227,7 +204,7 @@ function renderNoProvidersBar(
   bar.text = 'AI usage disabled';
   bar.color = display.statusColors.disabled;
   bar.tooltip =
-    'No providers are enabled. Configure aiUsageMonitor.enabledProviders (or override with AI_USAGE_PROVIDERS).';
+    'No providers are enabled. Configure aiUsageMonitor.enabledProviders.';
 }
 
 function renderCombinedBar(
@@ -244,6 +221,8 @@ function renderCombinedBar(
     .filter((v): v is number => typeof v === 'number');
   if (usable.length === 0) {
     bar.color = display.statusColors.disabled;
+  } else if (!display.enableThresholdColors) {
+    bar.color = undefined;
   } else {
     const maxUsed = Math.max(...usable);
     bar.color =

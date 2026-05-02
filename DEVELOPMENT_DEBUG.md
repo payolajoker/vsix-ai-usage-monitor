@@ -55,17 +55,10 @@ npm run test:tray
 npm run release:check
 ```
 
-## 6) Enable/Disable Providers via Env
+## 6) Extension Settings
 
-Set `AI_USAGE_PROVIDERS` to control which providers are queried and shown:
-
-- `AI_USAGE_PROVIDERS=codex`
-- `AI_USAGE_PROVIDERS=claude`
-- `AI_USAGE_PROVIDERS=claude,codex`
-- `AI_USAGE_PROVIDERS=none`
-
-For debug sessions, you can also place this in `.vscode/launch.json` under a
-profile `env` block.
+See `README.md` for the full `aiUsageMonitor.*` configuration reference and
+`settings.json` example.
 
 ## 7) Running as an installed extension (non-debug)
 

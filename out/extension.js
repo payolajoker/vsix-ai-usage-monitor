@@ -81,6 +81,7 @@ async function doRefresh() {
 }
 function getDisplayConfig() {
     const config = vscode.workspace.getConfiguration('aiUsageMonitor');
+    const enableThresholdColors = config.get('enableThresholdColors', true);
     const showProviderLetter = config.get('showProviderLetter', true);
     const weeklyExhaustedDisplay = normalizeWeeklyExhaustedDisplay(config.get('weeklyExhaustedDisplay', 'percent'));
     const markerConfig = config.get('providerMarkers', {});
@@ -97,6 +98,7 @@ function getDisplayConfig() {
         critical: normalizeColor(colorConfig?.critical, '#f85149'),
     };
     return {
+        enableThresholdColors,
         showProviderLetter,
         providerMarkers,
         weeklyExhaustedDisplay,
@@ -126,27 +128,11 @@ function normalizeColor(value, fallback) {
 }
 function getEnabledProviders() {
     const config = vscode.workspace.getConfiguration('aiUsageMonitor');
-    const configuredProviders = config.get('enabledProviders', [
-        'claude',
-        'codex',
-    ]);
-    const normalizedFromConfig = normalizeProviderList(configuredProviders);
-    const fallbackFromConfig = normalizedFromConfig.length > 0
-        ? normalizedFromConfig
-        : [...DEFAULT_PROVIDERS];
-    const raw = readEnv('AI_USAGE_PROVIDERS');
-    if (!raw || !raw.trim()) {
-        return fallbackFromConfig;
+    const configuredProviders = config.get('enabledProviders');
+    if (!configuredProviders) {
+        return [...DEFAULT_PROVIDERS];
     }
-    const tokens = raw
-        .split(/[\s,]+/)
-        .map((token) => token.trim().toLowerCase())
-        .filter(Boolean);
-    if (tokens.includes('none') || tokens.includes('off')) {
-        return [];
-    }
-    const normalizedFromEnv = normalizeProviderList(tokens);
-    return normalizedFromEnv.length > 0 ? normalizedFromEnv : fallbackFromConfig;
+    return normalizeProviderList(configuredProviders);
 }
 function normalizeProviderList(input) {
     const enabled = [];
@@ -157,10 +143,6 @@ function normalizeProviderList(input) {
         }
     }
     return enabled;
-}
-function readEnv(name) {
-    const proc = globalThis.process;
-    return proc?.env?.[name];
 }
 function normalizeProviderToken(token) {
     if (token === 'claude' || token === 'anthropic' || token === 'c') {
@@ -178,8 +160,7 @@ function toPercent(utilization, scale) {
 function renderNoProvidersBar(bar, display) {
     bar.text = 'AI usage disabled';
     bar.color = display.statusColors.disabled;
-    bar.tooltip =
-        'No providers are enabled. Configure aiUsageMonitor.enabledProviders (or override with AI_USAGE_PROVIDERS).';
+    bar.tooltip = 'No providers are enabled. Configure aiUsageMonitor.enabledProviders.';
 }
 function renderCombinedBar(bar, providers, display) {
     bar.text = providers
@@ -190,6 +171,9 @@ function renderCombinedBar(bar, providers, display) {
         .filter((v) => typeof v === 'number');
     if (usable.length === 0) {
         bar.color = display.statusColors.disabled;
+    }
+    else if (!display.enableThresholdColors) {
+        bar.color = undefined;
     }
     else {
         const maxUsed = Math.max(...usable);

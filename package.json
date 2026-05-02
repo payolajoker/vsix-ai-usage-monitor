@@ -44,7 +44,12 @@
             "claude",
             "codex"
           ],
-          "description": "Providers to enable in status bar and refresh cycle."
+          "description": "Providers to enable in status bar and refresh cycle. Set empty array to disable all providers."
+        },
+        "aiUsageMonitor.enableThresholdColors": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable warning/critical threshold coloring in the status bar."
         },
         "aiUsageMonitor.showProviderLetter": {
           "type": "boolean",
