@@ -160,7 +160,8 @@ function toPercent(utilization, scale) {
 function renderNoProvidersBar(bar, display) {
     bar.text = 'AI usage disabled';
     bar.color = display.statusColors.disabled;
-    bar.tooltip = 'No providers are enabled. Configure aiUsageMonitor.enabledProviders.';
+    bar.tooltip =
+        'No providers are enabled. Configure aiUsageMonitor.enabledProviders.';
 }
 function renderCombinedBar(bar, providers, display) {
     bar.text = providers
