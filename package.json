@@ -36,8 +36,7 @@
             "type": "string",
             "enum": [
               "claude",
-              "codex",
-              "copilot"
+              "codex"
             ]
           },
           "uniqueItems": true,
@@ -56,10 +55,9 @@
           "type": "object",
           "default": {
             "claude": "🟠",
-            "codex": "🔵",
-            "copilot": "🟣"
+            "codex": "🔵"
           },
-          "description": "Provider-to-marker mapping used in the status bar. Example: { \"claude\": \"🟠\", \"codex\": \"🔵\", \"copilot\": \"🟣\" }"
+          "description": "Provider-to-marker mapping used in the status bar. Example: { \"claude\": \"🟠\", \"codex\": \"🔵\" }"
         },
         "aiUsageMonitor.weeklyExhaustedDisplay": {
           "type": "string",

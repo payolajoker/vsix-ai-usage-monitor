@@ -1,15 +1,10 @@
 ﻿import * as vscode from 'vscode';
-import {
-  AgentUsage,
-  getClaudeUsage,
-  getCodexUsage,
-  getCopilotUsage,
-} from './provider-adapter';
+import { AgentUsage, getClaudeUsage, getCodexUsage } from './provider-adapter';
 
 let usageBar: vscode.StatusBarItem;
 let timer: ReturnType<typeof setInterval>;
 
-type ProviderKey = 'claude' | 'codex' | 'copilot';
+type ProviderKey = 'claude' | 'codex';
 type UsageScale = 'ratio' | 'percent';
 
 interface ProviderViewModel {
@@ -37,7 +32,6 @@ const DEFAULT_PROVIDERS: ProviderKey[] = ['claude', 'codex'];
 const DEFAULT_PROVIDER_MARKERS: Record<ProviderKey, string> = {
   claude: '🟠',
   codex: '🔵',
-  copilot: '🟣',
 };
 
 export function activate(context: vscode.ExtensionContext) {
@@ -74,16 +68,6 @@ async function doRefresh() {
           data: await getClaudeUsage(),
         };
       }
-      if (key === 'copilot') {
-        return {
-          key,
-          name: 'Copilot',
-          label: 'G',
-          scale: 'percent',
-          data: await getCopilotUsage(),
-        };
-      }
-
       return {
         key,
         name: 'Codex',
@@ -114,10 +98,6 @@ function getDisplayConfig(): DisplayConfig {
       DEFAULT_PROVIDER_MARKERS.claude,
     ),
     codex: normalizeMarker(markerConfig?.codex, DEFAULT_PROVIDER_MARKERS.codex),
-    copilot: normalizeMarker(
-      markerConfig?.copilot,
-      DEFAULT_PROVIDER_MARKERS.copilot,
-    ),
   };
 
   const warningThreshold = clampPercent(
@@ -230,14 +210,6 @@ function normalizeProviderToken(token: string): ProviderKey | null {
   }
   if (token === 'codex' || token === 'openai' || token === 'o') {
     return 'codex';
-  }
-  if (
-    token === 'copilot' ||
-    token === 'github' ||
-    token === 'gh' ||
-    token === 'g'
-  ) {
-    return 'copilot';
   }
   return null;
 }
