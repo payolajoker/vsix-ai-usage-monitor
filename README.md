@@ -1,7 +1,7 @@
 # AI Usage Monitor
 
-Monitor your **Claude** (Anthropic) and **Codex** (OpenAI) usage directly from
-VS Code, and optionally through the companion Windows tray app.
+Monitor your **Claude** (Anthropic), **Codex** (OpenAI), and **Copilot** usage
+directly from VS Code, and optionally through the companion Windows tray app.
 
 ## Workspace Components
 
@@ -17,7 +17,7 @@ VS Code, and optionally through the companion Windows tray app.
 
 ## Extension Features
 
-- Single status bar indicator with Claude/Codex usage summary
+- Single status bar indicator with Claude/Codex/Copilot usage summary
 - Color-coded warning states (normal/yellow/red)
 - Tooltip breakdown for 5-hour and 7-day windows
 - 60-second auto-refresh
@@ -26,26 +26,30 @@ VS Code, and optionally through the companion Windows tray app.
 
 ## Extension Requirements
 
-| Tool        | Requirement                         |
-| ----------- | ----------------------------------- |
-| Claude Code | `~/.claude/.credentials.json`       |
-| Codex CLI   | `codex` command available in `PATH` |
+| Tool        | Requirement                           |
+| ----------- | ------------------------------------- |
+| Claude Code | `~/.claude/.credentials.json`         |
+| Codex CLI   | `codex` command available in `PATH`   |
+| Copilot CLI | `copilot` command available in `PATH` |
 
-Both tools must be installed and used at least once for usage data to appear.
+Configured tools must be installed and used at least once for usage data to
+appear.
 
 ## Provider Toggle via Env
 
 You can choose which providers are active using `AI_USAGE_PROVIDERS`.
 
-- Default (unset): `claude,codex`
+- Default (unset): `claude,codex,copilot`
 - Codex only: `AI_USAGE_PROVIDERS=codex`
 - Claude only: `AI_USAGE_PROVIDERS=claude`
+- Copilot only: `AI_USAGE_PROVIDERS=copilot`
 - Disable all: `AI_USAGE_PROVIDERS=none`
 
 Accepted tokens are comma or space separated and support aliases:
 
 - Claude: `claude`, `anthropic`, `c`
 - Codex: `codex`, `openai`, `o`
+- Copilot: `copilot`, `github`, `gh`, `g`
 
 ## Status Bar Example
 

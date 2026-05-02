@@ -36,13 +36,15 @@
             "type": "string",
             "enum": [
               "claude",
-              "codex"
+              "codex",
+              "copilot"
             ]
           },
           "uniqueItems": true,
           "default": [
             "claude",
-            "codex"
+            "codex",
+            "copilot"
           ],
           "description": "Providers to enable in status bar and refresh cycle."
         },
@@ -55,9 +57,10 @@
           "type": "object",
           "default": {
             "claude": "🟠",
-            "codex": "🔵"
+            "codex": "🔵",
+            "copilot": "🟣"
           },
-          "description": "Provider-to-marker mapping used in the status bar. Example: { \"claude\": \"🟣\", \"codex\": \"🟢\" }"
+          "description": "Provider-to-marker mapping used in the status bar. Example: { \"claude\": \"🟠\", \"codex\": \"🔵\", \"copilot\": \"🟣\" }"
         },
         "aiUsageMonitor.weeklyExhaustedDisplay": {
           "type": "string",
