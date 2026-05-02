@@ -35,7 +35,6 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getClaudeUsage = getClaudeUsage;
 exports.getCodexUsage = getCodexUsage;
-exports.getCopilotUsage = getCopilotUsage;
 const fs = __importStar(require("fs"));
 const os = __importStar(require("os"));
 const https = __importStar(require("https"));
@@ -45,17 +44,13 @@ const readline = __importStar(require("readline"));
 // App-local provider adapter for VS Code extension runtime.
 const HOME = os.homedir();
 const CODEX_APP_SERVER_TIMEOUT_MS = 7000;
-const COPILOT_APP_SERVER_TIMEOUT_MS = 7000;
 const SESSION_SCAN_FILE_LIMIT = 5;
 const CODEX_INIT_REQUEST_ID = 1;
 const CODEX_RATE_LIMITS_REQUEST_ID = 2;
-const COPILOT_INIT_REQUEST_ID = 11;
-const COPILOT_RATE_LIMITS_REQUEST_ID = 12;
 const CLAUDE_OAUTH_BETA = 'oauth-2025-04-20';
 const CLAUDE_OAUTH_SCOPE = 'user:profile user:inference user:sessions:claude_code user:mcp_servers';
 const CLAUDE_OAUTH_CLIENT_ID = process.env.CLAUDE_CODE_OAUTH_CLIENT_ID ||
     '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
-let copilotAppServerSupportedCache = null;
 async function getClaudeUsage() {
     const credPath = path.join(HOME, '.claude', '.credentials.json');
     try {
@@ -183,167 +178,6 @@ async function getCodexUsage() {
         sevenDay: null,
         error: formatUsageErrorDetail('codex', `app_server=${appServerUsage.error ?? ''}; sessions=${sessionUsage.error ?? ''}`),
     };
-}
-async function getCopilotUsage() {
-    const appServerUsage = await getCopilotUsageFromAppServer();
-    if (!appServerUsage.error) {
-        return appServerUsage;
-    }
-    return {
-        fiveHour: null,
-        sevenDay: null,
-        error: formatUsageErrorDetail('copilot', `app_server=${appServerUsage.error ?? ''}`),
-    };
-}
-async function getCopilotUsageFromAppServer() {
-    try {
-        const supportsAppServer = await supportsCopilotAppServer();
-        if (!supportsAppServer) {
-            return {
-                fiveHour: null,
-                sevenDay: null,
-                error: 'Copilot CLI version does not expose app-server rate limits',
-            };
-        }
-        const result = await readCopilotRateLimitsFromAppServer();
-        const snapshot = pickRateLimitSnapshot(result, ['copilot', 'github']);
-        if (!snapshot?.primary) {
-            return {
-                fiveHour: null,
-                sevenDay: null,
-                error: 'No primary rate limit window from app server',
-            };
-        }
-        return {
-            fiveHour: mapCodexWindow(snapshot.primary),
-            sevenDay: snapshot.secondary ? mapCodexWindow(snapshot.secondary) : null,
-        };
-    }
-    catch (error) {
-        return {
-            fiveHour: null,
-            sevenDay: null,
-            error: String(error.message ?? error),
-        };
-    }
-}
-function supportsCopilotAppServer() {
-    if (copilotAppServerSupportedCache !== null) {
-        return Promise.resolve(copilotAppServerSupportedCache);
-    }
-    return new Promise((resolve) => {
-        const child = spawnCopilotHelpProcess();
-        let stdout = '';
-        const finalize = (value) => {
-            copilotAppServerSupportedCache = value;
-            resolve(value);
-        };
-        child.on('error', () => finalize(false));
-        child.stdout.on('data', (chunk) => {
-            stdout += chunk.toString();
-            if (stdout.length > 30000) {
-                stdout = stdout.slice(-30000);
-            }
-        });
-        child.on('exit', () => {
-            finalize(stdout.toLowerCase().includes('app-server'));
-        });
-    });
-}
-function readCopilotRateLimitsFromAppServer() {
-    return new Promise((resolve, reject) => {
-        const child = spawnCopilotAppServerProcess();
-        const rl = readline.createInterface({ input: child.stdout });
-        let settled = false;
-        let stderr = '';
-        let requestTimer;
-        const doneResolve = (value) => {
-            if (settled) {
-                return;
-            }
-            settled = true;
-            if (requestTimer) {
-                clearTimeout(requestTimer);
-            }
-            rl.close();
-            child.kill();
-            resolve(value);
-        };
-        const doneReject = (error) => {
-            if (settled) {
-                return;
-            }
-            settled = true;
-            if (requestTimer) {
-                clearTimeout(requestTimer);
-            }
-            rl.close();
-            child.kill();
-            reject(error);
-        };
-        child.on('error', (err) => {
-            doneReject(new Error(`Failed to start copilot app-server: ${err.message}`));
-        });
-        child.stderr.on('data', (chunk) => {
-            stderr += chunk.toString();
-            if (stderr.length > 4000) {
-                stderr = stderr.slice(-4000);
-            }
-        });
-        child.stdin.on('error', () => {
-            // ignore EPIPE when the process exits while writing
-        });
-        rl.on('line', (line) => {
-            const trimmed = line.trim();
-            if (!trimmed) {
-                return;
-            }
-            let msg;
-            try {
-                msg = JSON.parse(trimmed);
-            }
-            catch {
-                return;
-            }
-            if (msg.id !== COPILOT_RATE_LIMITS_REQUEST_ID) {
-                return;
-            }
-            if (msg.error) {
-                doneReject(new Error(`account/rateLimits/read failed: ${msg.error?.message ?? 'Unknown error'}`));
-                return;
-            }
-            doneResolve((msg.result ?? {}));
-        });
-        child.on('exit', (code, signal) => {
-            if (settled) {
-                return;
-            }
-            const detail = stderr.trim() ? ` stderr: ${stderr.trim()}` : '';
-            doneReject(new Error(`copilot app-server exited before response (code=${code}, signal=${signal}).${detail}`));
-        });
-        requestTimer = setTimeout(() => {
-            doneReject(new Error('copilot app-server request timed out'));
-        }, COPILOT_APP_SERVER_TIMEOUT_MS);
-        const send = (payload) => {
-            child.stdin.write(`${JSON.stringify(payload)}\n`);
-        };
-        send({
-            jsonrpc: '2.0',
-            id: COPILOT_INIT_REQUEST_ID,
-            method: 'initialize',
-            params: {
-                clientInfo: { name: 'ai-usage-monitor', version: '0.2.7' },
-                capabilities: { experimentalApi: true },
-            },
-        });
-        send({ jsonrpc: '2.0', method: 'initialized', params: {} });
-        send({
-            jsonrpc: '2.0',
-            id: COPILOT_RATE_LIMITS_REQUEST_ID,
-            method: 'account/rateLimits/read',
-            params: null,
-        });
-    });
 }
 async function getCodexUsageFromAppServer() {
     try {
@@ -473,30 +307,6 @@ function spawnCodexAppServerProcess() {
     }
     return (0, child_process_1.spawn)('codex', ['app-server', '--listen', 'stdio://'], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true,
-    });
-}
-function spawnCopilotAppServerProcess() {
-    if (process.platform === 'win32') {
-        return (0, child_process_1.spawn)('cmd.exe', ['/d', '/s', '/c', 'copilot app-server --listen stdio://'], {
-            stdio: ['pipe', 'pipe', 'pipe'],
-            windowsHide: true,
-        });
-    }
-    return (0, child_process_1.spawn)('copilot', ['app-server', '--listen', 'stdio://'], {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true,
-    });
-}
-function spawnCopilotHelpProcess() {
-    if (process.platform === 'win32') {
-        return (0, child_process_1.spawn)('cmd.exe', ['/d', '/s', '/c', 'copilot --help'], {
-            stdio: ['ignore', 'pipe', 'ignore'],
-            windowsHide: true,
-        });
-    }
-    return (0, child_process_1.spawn)('copilot', ['--help'], {
-        stdio: ['ignore', 'pipe', 'ignore'],
         windowsHide: true,
     });
 }
@@ -694,29 +504,6 @@ function formatUsageErrorDetail(provider, errorText) {
         }
         return 'CODEX USAGE UNAVAILABLE';
     }
-    if (text.includes('authentication') ||
-        text.includes('unauthorized') ||
-        text.includes('401') ||
-        text.includes('login required') ||
-        text.includes('not logged in')) {
-        return 'COPILOT CLI LOGIN REQUIRED';
-    }
-    if (text.includes('failed to start copilot app-server') &&
-        (text.includes('enoent') ||
-            text.includes('not recognized') ||
-            text.includes('cannot find'))) {
-        return 'COPILOT CLI NOT FOUND';
-    }
-    if (text.includes('does not expose app-server rate limits')) {
-        return 'COPILOT CLI VERSION HAS NO RATE-LIMIT API';
-    }
-    if (text.includes('timed out') || text.includes('timeout')) {
-        return 'COPILOT CLI TIMEOUT';
-    }
-    if (text.includes('app-server')) {
-        return 'COPILOT APP-SERVER UNAVAILABLE';
-    }
-    return 'COPILOT USAGE UNAVAILABLE';
 }
 function httpsGet(hostname, urlPath, headers) {
     return httpsJsonRequest('GET', hostname, urlPath, headers);
