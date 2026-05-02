@@ -59,6 +59,15 @@
           },
           "description": "Provider-to-marker mapping used in the status bar. Example: { \"claude\": \"🟣\", \"codex\": \"🟢\" }"
         },
+        "aiUsageMonitor.weeklyExhaustedDisplay": {
+          "type": "string",
+          "enum": [
+            "percent",
+            "remainingDays"
+          ],
+          "default": "percent",
+          "description": "When weekly usage is exhausted, show either 100% or days remaining until reset in the status bar."
+        },
         "aiUsageMonitor.warningThreshold": {
           "type": "number",
           "default": 70,

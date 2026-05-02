@@ -82,6 +82,7 @@ async function doRefresh() {
 function getDisplayConfig() {
     const config = vscode.workspace.getConfiguration('aiUsageMonitor');
     const showProviderLetter = config.get('showProviderLetter', true);
+    const weeklyExhaustedDisplay = normalizeWeeklyExhaustedDisplay(config.get('weeklyExhaustedDisplay', 'percent'));
     const markerConfig = config.get('providerMarkers', {});
     const providerMarkers = {
         claude: normalizeMarker(markerConfig?.claude, DEFAULT_PROVIDER_MARKERS.claude),
@@ -98,10 +99,15 @@ function getDisplayConfig() {
     return {
         showProviderLetter,
         providerMarkers,
+        weeklyExhaustedDisplay,
         warningThreshold,
         criticalThreshold,
         statusColors,
     };
+}
+function normalizeWeeklyExhaustedDisplay(value) {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return normalized === 'remainingdays' ? 'remainingDays' : 'percent';
 }
 function normalizeMarker(value, fallback) {
     return typeof value === 'string' && value.trim() ? value.trim() : fallback;
@@ -224,11 +230,29 @@ function formatSegment(provider, display) {
         return `${prefix} --`;
     }
     if (isWeeklyExhausted(data, scale)) {
+        if (display.weeklyExhaustedDisplay === 'remainingDays') {
+            const daysLeft = formatDaysRemaining(data.sevenDay?.resetsAt ?? '');
+            return `${prefix} ${daysLeft}`;
+        }
         return `${prefix} 100%`;
     }
     const used5h = toPercent(data.fiveHour.utilization, scale);
     const reset5h = formatReset(data.fiveHour.resetsAt);
     return `${prefix} ${used5h}%${reset5h ? ` ${reset5h}` : ''}`;
+}
+function formatDaysRemaining(iso) {
+    if (!iso) {
+        return 'soon';
+    }
+    try {
+        const diffMs = Math.max(0, new Date(iso).getTime() - Date.now());
+        const dayMs = 24 * 60 * 60 * 1000;
+        const days = Math.max(1, Math.ceil(diffMs / dayMs));
+        return `${days}d`;
+    }
+    catch {
+        return 'soon';
+    }
 }
 function formatProviderPrefix(provider, display) {
     const marker = display.providerMarkers[provider.key] ??

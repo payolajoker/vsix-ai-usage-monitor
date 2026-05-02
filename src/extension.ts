@@ -18,6 +18,7 @@ interface ProviderViewModel {
 interface DisplayConfig {
   showProviderLetter: boolean;
   providerMarkers: Record<ProviderKey, string>;
+  weeklyExhaustedDisplay: 'percent' | 'remainingDays';
   warningThreshold: number;
   criticalThreshold: number;
   statusColors: {
@@ -84,6 +85,9 @@ async function doRefresh() {
 function getDisplayConfig(): DisplayConfig {
   const config = vscode.workspace.getConfiguration('aiUsageMonitor');
   const showProviderLetter = config.get<boolean>('showProviderLetter', true);
+  const weeklyExhaustedDisplay = normalizeWeeklyExhaustedDisplay(
+    config.get<string>('weeklyExhaustedDisplay', 'percent'),
+  );
 
   const markerConfig = config.get<Record<string, unknown>>(
     'providerMarkers',
@@ -118,10 +122,20 @@ function getDisplayConfig(): DisplayConfig {
   return {
     showProviderLetter,
     providerMarkers,
+    weeklyExhaustedDisplay,
     warningThreshold,
     criticalThreshold,
     statusColors,
   };
+}
+
+function normalizeWeeklyExhaustedDisplay(
+  value: unknown,
+): 'percent' | 'remainingDays' {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase();
+  return normalized === 'remainingdays' ? 'remainingDays' : 'percent';
 }
 
 function normalizeMarker(value: unknown, fallback: string): string {
@@ -283,12 +297,30 @@ function formatSegment(
   }
 
   if (isWeeklyExhausted(data, scale)) {
+    if (display.weeklyExhaustedDisplay === 'remainingDays') {
+      const daysLeft = formatDaysRemaining(data.sevenDay?.resetsAt ?? '');
+      return `${prefix} ${daysLeft}`;
+    }
     return `${prefix} 100%`;
   }
 
   const used5h = toPercent(data.fiveHour.utilization, scale);
   const reset5h = formatReset(data.fiveHour.resetsAt);
   return `${prefix} ${used5h}%${reset5h ? ` ${reset5h}` : ''}`;
+}
+
+function formatDaysRemaining(iso: string): string {
+  if (!iso) {
+    return 'soon';
+  }
+  try {
+    const diffMs = Math.max(0, new Date(iso).getTime() - Date.now());
+    const dayMs = 24 * 60 * 60 * 1000;
+    const days = Math.max(1, Math.ceil(diffMs / dayMs));
+    return `${days}d`;
+  } catch {
+    return 'soon';
+  }
 }
 
 function formatProviderPrefix(
