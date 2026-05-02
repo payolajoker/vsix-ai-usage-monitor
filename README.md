@@ -1,6 +1,7 @@
 # AI Usage Monitor
 
-Monitor your **Claude** (Anthropic) and **Codex** (OpenAI) usage directly from VS Code, and optionally through the companion Windows tray app.
+Monitor your **Claude** (Anthropic) and **Codex** (OpenAI) usage directly from
+VS Code, and optionally through the companion Windows tray app.
 
 ## Workspace Components
 
@@ -11,7 +12,8 @@ Monitor your **Claude** (Anthropic) and **Codex** (OpenAI) usage directly from V
 - Provider adapters are split per app runtime:
   - Extension: `src/provider-adapter.ts`
   - Tray: `tray-app/provider-adapter.js`
-  - Shared contract intent: `getClaudeUsage()` / `getCodexUsage()`, but implementation remains app-local.
+  - Shared contract intent: `getClaudeUsage()` / `getCodexUsage()`, but
+    implementation remains app-local.
 
 ## Extension Features
 
@@ -19,14 +21,15 @@ Monitor your **Claude** (Anthropic) and **Codex** (OpenAI) usage directly from V
 - Color-coded warning states (normal/yellow/red)
 - Tooltip breakdown for 5-hour and 7-day windows
 - 60-second auto-refresh
-- Codex source: `codex app-server` (`account/rateLimits/read`) with local fallback
+- Codex source: `codex app-server` (`account/rateLimits/read`) with local
+  fallback
 
 ## Extension Requirements
 
-| Tool | Requirement |
-|------|-------------|
-| Claude Code | `~/.claude/.credentials.json` |
-| Codex CLI | `codex` command available in `PATH` |
+| Tool        | Requirement                         |
+| ----------- | ----------------------------------- |
+| Claude Code | `~/.claude/.credentials.json`       |
+| Codex CLI   | `codex` command available in `PATH` |
 
 Both tools must be installed and used at least once for usage data to appear.
 
@@ -51,6 +54,11 @@ http://127.0.0.1:47931
 ```
 
 Use the button to run a one-shot `codex app-server` check and inspect raw JSON.
+
+## Development / Debug Quick Guide
+
+See `DEVELOPMENT_DEBUG.md` for local extension debug profiles, watch-mode
+workflow, and warning-noise suppression details.
 
 ## Tray Companion (0.3.6) Summary
 
