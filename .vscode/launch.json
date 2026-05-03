@@ -14,7 +14,7 @@
         "NODE_NO_WARNINGS": "1"
       },
       "outFiles": ["${workspaceFolder}/out/**/*.js"],
-      "preLaunchTask": "npm: compile"
+      "preLaunchTask": "npm: watch"
     },
     {
       "name": "Run Extension (No Compile)",

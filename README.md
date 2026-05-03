@@ -1,7 +1,7 @@
 # AI Usage Monitor
 
-Monitor your **Claude** (Anthropic) and **Codex** (OpenAI) usage directly from
-VS Code, and optionally through the companion Windows tray app.
+Monitor your **Claude** (Anthropic), **Codex** (OpenAI), and **Copilot** usage
+directly from VS Code, and optionally through the companion Windows tray app.
 
 ## Workspace Components
 
@@ -12,17 +12,19 @@ VS Code, and optionally through the companion Windows tray app.
 - Provider adapters are split per app runtime:
   - Extension: `src/provider-adapter.ts`
   - Tray: `tray-app/provider-adapter.js`
-  - Shared contract intent: `getClaudeUsage()` / `getCodexUsage()`, but
-    implementation remains app-local.
+  - Shared contract intent: `getClaudeUsage()` / `getCodexUsage()` /
+    `getCopilotUsage()`, but implementation remains app-local.
 
 ## Extension Features
 
-- Single status bar indicator with Claude/Codex usage summary
+- Single status bar indicator with Claude/Codex/Copilot usage summary
 - Color-coded warning states (normal/yellow/red)
 - Tooltip breakdown for 5-hour and 7-day windows
 - 60-second auto-refresh
 - Codex source: `codex app-server` (`account/rateLimits/read`) with local
   fallback
+- Copilot source: local VS Code `workspaceStorage` (`chatSessions` and
+  `GitHub.copilot-chat/transcripts`) with estimated credit usage
 
 ### Provider and Color Configuration
 
@@ -33,7 +35,7 @@ This extension uses settings as the single source of truth for behavior.
 
 - `aiUsageMonitor.enabledProviders`
   - Type: `string[]`
-  - Allowed values: `claude`, `codex`
+  - Allowed values: `claude`, `codex`, `copilot`
   - Example: `["codex"]` to run Codex only
   - Use `[]` to disable all providers
 - `aiUsageMonitor.enableThresholdColors`
@@ -46,8 +48,18 @@ This extension uses settings as the single source of truth for behavior.
   - `false`: show marker only (for example `🔵`)
 - `aiUsageMonitor.providerMarkers`
   - Type: `object`
-  - Keys: `claude`, `codex`
+  - Keys: `claude`, `codex`, `copilot`
   - Customize provider marker symbols
+- `aiUsageMonitor.copilotLookbackDays`
+  - Type: `number` (1-365)
+  - Lookback window used when parsing Copilot local logs
+- `aiUsageMonitor.copilotIncludedCredits`
+  - Type: `number` (>0)
+  - Included credits denominator used for Copilot percentage display
+  - `3900` is a practical starting value for Copilot Pro+
+- `aiUsageMonitor.copilotAutoModel`
+  - Type: `string`
+  - Model used to price Copilot records logged as `auto`
 - `aiUsageMonitor.weeklyExhaustedDisplay`
   - Type: `string`
   - Values: `percent`, `remainingDays`
@@ -67,13 +79,17 @@ Example `settings.json`:
 
 ```json
 {
-  "aiUsageMonitor.enabledProviders": ["codex"],
+  "aiUsageMonitor.enabledProviders": ["codex", "copilot"],
   "aiUsageMonitor.enableThresholdColors": true,
   "aiUsageMonitor.showProviderLetter": false,
   "aiUsageMonitor.providerMarkers": {
     "claude": "C",
-    "codex": "O"
+    "codex": "O",
+    "copilot": "G"
   },
+  "aiUsageMonitor.copilotLookbackDays": 30,
+  "aiUsageMonitor.copilotIncludedCredits": 1000,
+  "aiUsageMonitor.copilotAutoModel": "gpt-5.3-codex",
   "aiUsageMonitor.weeklyExhaustedDisplay": "remainingDays",
   "aiUsageMonitor.warningThreshold": 70,
   "aiUsageMonitor.criticalThreshold": 90,
@@ -91,25 +107,38 @@ Example `settings.json`:
 | ----------- | ----------------------------------- |
 | Claude Code | `~/.claude/.credentials.json`       |
 | Codex CLI   | `codex` command available in `PATH` |
+| Copilot     | Local VS Code Copilot chat history  |
 
 Configured tools must be installed and used at least once for usage data to
 appear.
 
-## Copilot Findings (May 2026)
+## Copilot Notes (May 2026)
 
-Copilot monitoring is intentionally not implemented in this extension for now.
+Copilot monitoring is implemented from local VS Code chat data.
 
-- Copilot usage/limits are available in the VS Code Copilot UI.
-- A stable, documented local API surface for reading session/weekly/monthly
-  Copilot counters was not available for this extension runtime.
-- To avoid unreliable telemetry, Copilot support was removed from active
-  providers.
+- Input tokens are estimated from locally stored request context.
+- Output/cache tokens are exact only when transcript `session.shutdown`
+  `modelMetrics` are available.
+- Some historical Copilot Chat versions under-recorded `completionTokens`; if
+  many records show zero output tokens, limit the lookback window.
+- Credit usage is an estimate derived from local pricing tables and may not
+  match billing exports exactly.
+- The status bar shows estimated USD spend (e.g. `$20.2`) and token volume (e.g.
+  `1.4M tok`) alongside the credit-usage percentage.
+- Hover tooltip shows compact metrics: request count, token totals, estimated
+  spend, credit usage, and a per-model breakdown with rate and spend in USD per
+  1M tokens.
+- Copilot UI "Included premium requests" is a different quota surface than
+  token-credit estimation, so percentages will not match 1:1.
 
 ## Status Bar Example
 
 ```
-🟠 C 72% 1h 30m  |  🔵 O 85% 45m
+🟠 C 72% 1h 30m 🔵 O 85% 45m 🟢G 18% $20.2 1.4M tok
 ```
+
+Copilot segments show **percent of included credits used**, **estimated USD
+spend**, and **total token volume** for the configured lookback window.
 
 ## Quick Probe (Before Extension Debugging)
 

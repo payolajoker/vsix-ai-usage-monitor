@@ -1,7 +1,7 @@
 {
   "name": "ai-usage-statusbar",
   "displayName": "AI Usage Monitor",
-  "description": "Displays real-time Claude and Codex usage in the VS Code status bar",
+  "description": "Displays real-time Claude, Codex, and Copilot usage in the VS Code status bar",
   "icon": "icon.png",
   "version": "0.2.7",
   "publisher": "PayolaJoker",
@@ -36,13 +36,15 @@
             "type": "string",
             "enum": [
               "claude",
-              "codex"
+              "codex",
+              "copilot"
             ]
           },
           "uniqueItems": true,
           "default": [
             "claude",
-            "codex"
+            "codex",
+            "copilot"
           ],
           "description": "Providers to enable in status bar and refresh cycle. Set empty array to disable all providers."
         },
@@ -54,15 +56,34 @@
         "aiUsageMonitor.showProviderLetter": {
           "type": "boolean",
           "default": true,
-          "description": "Show provider letter (C/O) next to each provider marker in the status bar."
+          "description": "Show provider letter (C/O/G) next to each provider marker in the status bar."
         },
         "aiUsageMonitor.providerMarkers": {
           "type": "object",
           "default": {
             "claude": "🟠",
-            "codex": "🔵"
+            "codex": "🔵",
+            "copilot": "🟢"
           },
-          "description": "Provider-to-marker mapping used in the status bar. Example: { \"claude\": \"🟠\", \"codex\": \"🔵\" }"
+          "description": "Provider-to-marker mapping used in the status bar. Example: { \"claude\": \"🟠\", \"codex\": \"🔵\", \"copilot\": \"🟩\" }"
+        },
+        "aiUsageMonitor.copilotLookbackDays": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 365,
+          "description": "Copilot usage lookback window in days when estimating token volume and credits."
+        },
+        "aiUsageMonitor.copilotIncludedCredits": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 1,
+          "description": "Included Copilot credits used as denominator for the Copilot percentage metric."
+        },
+        "aiUsageMonitor.copilotAutoModel": {
+          "type": "string",
+          "default": "gpt-5.3-codex",
+          "description": "Model to assume for Copilot records logged as auto when estimating credits."
         },
         "aiUsageMonitor.weeklyExhaustedDisplay": {
           "type": "string",

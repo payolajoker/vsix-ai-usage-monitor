@@ -1,10 +1,16 @@
 ﻿import * as vscode from 'vscode';
-import { AgentUsage, getClaudeUsage, getCodexUsage } from './provider-adapter';
+import {
+  AgentUsage,
+  CopilotUsageOptions,
+  getClaudeUsage,
+  getCodexUsage,
+  getCopilotUsage,
+} from './provider-adapter';
 
 let usageBar: vscode.StatusBarItem;
 let timer: ReturnType<typeof setInterval>;
 
-type ProviderKey = 'claude' | 'codex';
+type ProviderKey = 'claude' | 'codex' | 'copilot';
 type UsageScale = 'ratio' | 'percent';
 
 interface ProviderViewModel {
@@ -29,10 +35,11 @@ interface DisplayConfig {
   };
 }
 
-const DEFAULT_PROVIDERS: ProviderKey[] = ['claude', 'codex'];
+const DEFAULT_PROVIDERS: ProviderKey[] = ['claude', 'codex', 'copilot'];
 const DEFAULT_PROVIDER_MARKERS: Record<ProviderKey, string> = {
   claude: '🟠',
   codex: '🔵',
+  copilot: '🟩',
 };
 
 export function activate(context: vscode.ExtensionContext) {
@@ -52,6 +59,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 async function doRefresh() {
   const displayConfig = getDisplayConfig();
+  const copilotConfig = getCopilotConfig();
   const enabledProviders = getEnabledProviders();
   if (enabledProviders.length === 0) {
     renderNoProvidersBar(usageBar, displayConfig);
@@ -69,6 +77,15 @@ async function doRefresh() {
           data: await getClaudeUsage(),
         };
       }
+      if (key === 'copilot') {
+        return {
+          key,
+          name: 'Copilot',
+          label: 'G',
+          scale: 'percent',
+          data: await getCopilotUsage(copilotConfig),
+        };
+      }
       return {
         key,
         name: 'Codex',
@@ -80,6 +97,31 @@ async function doRefresh() {
   );
 
   renderCombinedBar(usageBar, providers, displayConfig);
+}
+
+function getCopilotConfig(): CopilotUsageOptions {
+  const config = vscode.workspace.getConfiguration('aiUsageMonitor');
+  const lookbackDays = Math.max(
+    1,
+    Math.min(
+      365,
+      Math.round(Number(config.get<number>('copilotLookbackDays', 30))),
+    ),
+  );
+  const includedCredits = Math.max(
+    1,
+    Number(config.get<number>('copilotIncludedCredits', 1000)),
+  );
+  const autoModel = String(
+    config.get<string>('copilotAutoModel', 'gpt-5.3-codex') ?? 'gpt-5.3-codex',
+  )
+    .trim()
+    .toLowerCase();
+  return {
+    lookbackDays,
+    includedCredits,
+    autoModel,
+  };
 }
 
 function getDisplayConfig(): DisplayConfig {
@@ -103,6 +145,10 @@ function getDisplayConfig(): DisplayConfig {
       DEFAULT_PROVIDER_MARKERS.claude,
     ),
     codex: normalizeMarker(markerConfig?.codex, DEFAULT_PROVIDER_MARKERS.codex),
+    copilot: normalizeMarker(
+      markerConfig?.copilot,
+      DEFAULT_PROVIDER_MARKERS.copilot,
+    ),
   };
 
   const warningThreshold = clampPercent(
@@ -187,6 +233,14 @@ function normalizeProviderToken(token: string): ProviderKey | null {
   }
   if (token === 'codex' || token === 'openai' || token === 'o') {
     return 'codex';
+  }
+  if (
+    token === 'copilot' ||
+    token === 'github' ||
+    token === 'ghcp' ||
+    token === 'g'
+  ) {
+    return 'copilot';
   }
   return null;
 }
@@ -284,7 +338,11 @@ function formatSegment(
 
   const used5h = toPercent(data.fiveHour.utilization, scale);
   const reset5h = formatReset(data.fiveHour.resetsAt);
-  return `${prefix} ${used5h}%${reset5h ? ` ${reset5h}` : ''}`;
+  const showReset = !data.meta?.hideReset && Boolean(reset5h);
+  const segmentSuffix = data.meta?.segmentSuffix
+    ? ` ${data.meta.segmentSuffix}`
+    : '';
+  return `${prefix} ${used5h}%${showReset ? ` ${reset5h}` : ''}${segmentSuffix}`;
 }
 
 function formatDaysRemaining(iso: string): string {
@@ -330,6 +388,13 @@ function appendUsageTooltip(
     return;
   }
 
+  if (data.meta?.compactTooltip) {
+    for (const note of data.meta.tooltipNotes ?? []) {
+      tip.appendMarkdown(`- ${note}\n`);
+    }
+    return;
+  }
+
   tip.appendMarkdown(`| | Used | Resets In |\n|---|---|---|\n`);
   if (isWeeklyExhausted(data, scale) && data.sevenDay) {
     const used7d = toPercent(data.sevenDay.utilization, scale);
@@ -345,8 +410,9 @@ function appendUsageTooltip(
 
   const used5h = toPercent(data.fiveHour.utilization, scale);
   const reset5h = formatReset(data.fiveHour.resetsAt);
+  const primaryLabel = data.meta?.primaryLabel || '5-Hour Session';
   tip.appendMarkdown(
-    `| 5-Hour Session | **${used5h}%** | ${reset5h || '--'} |\n`,
+    `| ${primaryLabel} | **${used5h}%** | ${reset5h || '--'} |\n`,
   );
   if (data.sevenDay) {
     const used7d = toPercent(data.sevenDay.utilization, scale);
@@ -354,6 +420,13 @@ function appendUsageTooltip(
     tip.appendMarkdown(
       `| 7-Day Weekly | **${used7d}%** | ${reset7d || '--'} |\n`,
     );
+  }
+
+  if (data.meta?.tooltipNotes?.length) {
+    tip.appendMarkdown('\n');
+    for (const note of data.meta.tooltipNotes) {
+      tip.appendMarkdown(`- ${note}\n`);
+    }
   }
 }
 

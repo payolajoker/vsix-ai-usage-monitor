@@ -15,6 +15,7 @@
       "label": "npm: watch",
       "type": "npm",
       "script": "watch",
+      "detail": "Builds in watch mode for local extension debugging (use with F5 / Run Extension).",
       "isBackground": true,
       "problemMatcher": ["$tsc-watch"],
       "group": "build"
