@@ -1,0 +1,34 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--disable-extensions"
+      ],
+      "env": {
+        "NODE_OPTIONS": "--no-deprecation --no-warnings",
+        "NODE_NO_WARNINGS": "1"
+      },
+      "outFiles": ["${workspaceFolder}/out/**/*.js"],
+      "preLaunchTask": "npm: watch"
+    },
+    {
+      "name": "Run Extension (No Compile)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--disable-extensions"
+      ],
+      "env": {
+        "NODE_OPTIONS": "--no-deprecation --no-warnings",
+        "NODE_NO_WARNINGS": "1"
+      },
+      "outFiles": ["${workspaceFolder}/out/**/*.js"]
+    }
+  ]
+}
