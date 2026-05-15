@@ -1,3 +1,6 @@
+> [!CAUTION]
+> Fork deprecated in order to maintain a new single repo: https://github.com/gustavohrg/ai-usage-statusbar
+
 # AI Usage Monitor
 
 Monitor your **Claude** (Anthropic), **Codex** (OpenAI), and **Copilot** usage
